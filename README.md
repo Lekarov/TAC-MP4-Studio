@@ -7,7 +7,7 @@
 Transforme n'importe quel fichier audio en vidéo visualisée frame par frame,  
 synchronisée beat par beat, exportée en qualité broadcast.
 
-![Version](https://img.shields.io/badge/version-1.8.0-7c3aed?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.9.0-7c3aed?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.8+-5C3EE8?style=flat-square&logo=opencv&logoColor=white)
 ![CustomTkinter](https://img.shields.io/badge/UI-CustomTkinter-1F6AA5?style=flat-square)
@@ -56,21 +56,22 @@ Audio ──► Analyse librosa ──► Features (bass / kick / rms / spec / r
 |---|---|
 | `📷 Photo floue` | La pochette album est utilisée comme fond, floutée et assombrie |
 | `🌈 Dégradé` | Fond uni deux couleurs, personnalisable via color pickers |
-| `📂 Image perso` | **Nouvelle** — image de fond indépendante de la pochette, avec flou et luminosité |
+| `📂 Image perso` | Image de fond indépendante de la pochette, avec flou et luminosité |
 
-### Export
+### Export — 4 modes
 
 | Mode | Résolution | Durée | Usage |
 |---|---|---|---|
-| **CHECK** | 1920 × 1080 | 15 s | Vérification rapide |
 | **SHORT** | 1080 × 1920 | ~1 min (centre audio) | Reel · Story · Short |
+| **VERTICAL** | 1080 × 1920 | Fichier entier | Vertical complet |
 | **COMPLET** | 1920 × 1080 | Fichier entier | Publication finale |
+| **DUAL** | 1920×1080 + 1080×1920 | Complet + ~1 min | Les deux en un seul export |
 
 - Encodage **GPU automatique** (NVIDIA NVENC) si disponible, sinon CPU libx264
 - Preview **live 30 fps** dans l'éditeur avant export
 - Historique des exports avec miniatures
 
-### Presets intégrés
+### Bibliothèque de presets
 
 | Preset | Style | Ambiance |
 |---|---|---|
@@ -82,10 +83,14 @@ Audio ──► Analyse librosa ──► Features (bass / kick / rms / spec / r
 | Short Vertical | Symétrie miroir | Format 9:16 |
 | Vinyl Classic | Barres premium | Vinyle noir · Dégradé |
 | Vinyl Gold | Cercle + barres | Vinyle doré · Flottant |
+| Acid Wave | Oscilloscope | Vert néon · Dégradé |
 | Purple Dream | Cercle radial | Vinyle · Violet |
 | Midnight Vinyl | Symétrie miroir | Vinyle · Bleu nuit |
 | Neon Tricolor | Barres néon | Rose · Violet · Cyan |
 | Sunrise | Symétrie miroir | Orange · Or |
+
+Les presets intégrés sont **cachables individuellement** et restaurables en un clic.  
+Les presets personnels sont sauvegardables, étoilables (★) et supprimables.
 
 ---
 
@@ -111,8 +116,8 @@ Audio ──► Analyse librosa ──► Features (bass / kick / rms / spec / r
 ### Installation
 
 ```bash
-git clone https://github.com/ton-repo/tac_mp4_studio
-cd tac_mp4_studio
+git clone https://github.com/DoktorP3st/TAC-MP4-Studio
+cd TAC-MP4-Studio
 pip install -r requirements.txt
 python main.py
 ```
@@ -139,12 +144,12 @@ double-clic sur TAC.bat
 
 | Onglet | Contenu |
 |---|---|
-| ⚡ **Presets** | 12 presets intégrés · favoris · presets utilisateur sauvegardables |
+| ⚡ **Presets** | Bibliothèque unifiée intégrés + perso · favoris · sauvegarde · suppression |
 | 📸 **Image** | Taille pochette · Réactivité · Vinyle · Fond (flou · luminosité · dégradé · image perso · oscillation) |
 | ✨ **Effets** | Particules · Atmosphère · Couleur atmosphère |
 | 📊 **Spectre** | Style · Taille · Position · Couleur mono ou 3 bandes · Flash beats |
 | 📝 **Texte** | Artiste · Titre · Sous-titre · Police · Taille · Position · Ombre |
-| 🚀 **Export** | Dossier de sortie · Mode · Génération |
+| 🚀 **Export** | Dossier de sortie · Mode (grille 2×2) · Génération |
 
 ### Raccourcis clavier
 
@@ -160,7 +165,7 @@ double-clic sur TAC.bat
 ## Architecture
 
 ```
-tac_mp4_studio/
+TAC-MP4-Studio/
 │
 ├── main.py                    Point d'entrée
 ├── TAC.bat                    Lanceur Windows
@@ -185,8 +190,8 @@ tac_mp4_studio/
     │
     └── ui/
         ├── app.py             App — état · lifecycle · navigation · éditeur
-        ├── editor.py          EditorMixin — onglets + callbacks
-        ├── pages.py           PagesMixin — accueil · historique · turbo · presets
+        ├── editor.py          EditorMixin — onglets + callbacks + gestion presets
+        ├── pages.py           PagesMixin — accueil · historique · turbo
         ├── preview.py         PreviewMixin — preview live · waveform · audio
         └── widgets.py         Widgets réutilisables
 ```
@@ -278,28 +283,28 @@ FFmpeg doit être installé séparément sur la machine cible.
 
 ## Changelog
 
+### v1.9 — Bibliothèque de presets unifiée + export cards
+- Onglet ⚡ refactorisé : bibliothèque unifiée intégrés + perso dans une seule liste
+- Presets intégrés cachables individuellement (✕) et restaurables en un clic
+- Badge **intégré** / **perso** · bande couleur · favoris (★) remontent en tête
+- Modes d'export redessinés en **grille 2×2** : icône + résolution + badge durée
+- Sélection d'export colorée par mode (chaque mode a sa propre couleur de bordure)
+
 ### v1.8 — Texte amélioré
 - Taille de police ajustable par curseur
 - Sous-titre indépendant
 - Ombre paramétrable : intensité · couleur · décalage XY
 
 ### v1.7 — Fond image personnalisé + robustesse
-- **Nouveau mode fond `Image perso`** : image de fond indépendante de la pochette album
-- Luminosité du fond par défaut rehaussée (`0.85`)
+- Nouveau mode fond `Image perso` : image de fond indépendante de la pochette album
 - Couche d'erreurs centralisée (`errors.py`) avec 8 exceptions métier typées
 - Logger rotatif (`logger.py`) — trace complète dans `tac.log`
-- Messages d'erreur utilisateur en français via popup, détails techniques loggués
-- Callbacks preview protégés contre les `TclError` (widgets détruits)
-- Subprocess FFmpeg nettoyés en `try/finally`
 
 ### v1.6 — Optimisations performances
-- Cache LRU sur `compute_audio_features` — refresh preview instantané si l'audio n'a pas changé
-- Cache disque vinyle de base — reconstruction évitée à chaque frame (~12 ms/frame économisés)
-- Cache label et sleeve pochette vinyle (~9 ms/frame)
-- Précalcul des angles cos/sin spectre (orbe + arc plasma)
-- Vectorisation numpy de l'oscilloscope (suppression de 512 `cv2.line` individuels par frame)
-- Redimensionnement preview BILINEAR au lieu de LANCZOS (~2.5 ms/tick)
-- Cache waveform basse résolution évitant le rechargement librosa
+- Cache LRU sur `compute_audio_features` — refresh preview instantané
+- Cache disque vinyle (~12 ms/frame économisés)
+- Vectorisation numpy de l'oscilloscope
+- Redimensionnement preview BILINEAR (~2.5 ms/tick)
 
 ### v1.5 — Spectre tricolor + réactivité beats
 - 3 couleurs indépendantes par bande (bass · mid · high)
