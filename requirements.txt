@@ -1,0 +1,20 @@
+# TAC MP4 Studio — dépendances Python
+# Installation : pip install -r requirements.txt
+
+# Core audio/vidéo
+numpy>=1.24
+opencv-python>=4.8
+Pillow>=10.0
+librosa>=0.10
+soundfile>=0.12
+
+# Interface moderne
+customtkinter>=5.2
+
+# Drag & drop (Update 1) — optionnel mais recommandé
+# Si absent, le drag & drop est simplement désactivé sans crash
+tkinterdnd2>=0.3.0
+
+# Notes :
+# - FFmpeg doit être dans le PATH : https://www.gyan.dev/ffmpeg/builds/
+# - scipy installé automatiquement via librosa
