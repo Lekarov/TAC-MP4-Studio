@@ -323,6 +323,6 @@ FFmpeg doit être installé séparément sur la machine cible.
 
 <div align="center">
 
-Développé par **DoktorP3st**
+Développé par **DoktorP3st** · 🎮 [twitch.tv/DoktorP3st](https://twitch.tv/DoktorP3st)
 
 </div>
