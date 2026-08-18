@@ -2,18 +2,18 @@
 # Installation : pip install -r requirements.txt
 
 # Core audio/vidéo
-numpy>=1.24
-opencv-python>=4.8
-Pillow>=10.0
-librosa>=0.10
-soundfile>=0.12
+numpy>=1.24,<3.0
+opencv-python>=4.8,<5.0
+Pillow>=10.0,<13.0
+librosa>=0.10,<1.0
+soundfile>=0.12,<1.0
 
 # Interface moderne
-customtkinter>=5.2
+customtkinter>=5.2,<6.0
 
 # Drag & drop (Update 1) — optionnel mais recommandé
 # Si absent, le drag & drop est simplement désactivé sans crash
-tkinterdnd2>=0.3.0
+tkinterdnd2>=0.3.0,<1.0
 
 # Notes :
 # - FFmpeg doit être dans le PATH : https://www.gyan.dev/ffmpeg/builds/

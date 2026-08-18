@@ -19,6 +19,9 @@ import librosa
 import soundfile as sf
 
 from app.errors import AudioImportError
+from app.logger import get_logger
+
+_log = get_logger("audio")
 
 
 # ── Cache LRU pour compute_audio_features ─────────────────────────────────────
@@ -66,8 +69,8 @@ def _load_audio(
         file_dur = info.frames / info.samplerate
         if clamped_offset >= file_dur:
             clamped_offset = max(0.0, file_dur - (duration if duration is not None else file_dur))
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.debug("Impossible de lire la durée du fichier pour clamper l'offset: %s", exc)
 
     # Fast path — soundfile handles WAV/FLAC/OGG natively without deprecated audioread
     try:
@@ -86,8 +89,8 @@ def _load_audio(
             return y, sr
     except AudioImportError:
         raise
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.debug("soundfile n'a pas pu lire %r, bascule sur librosa: %s", audio_path, exc)
 
     # Fallback — handles MP3, M4A, ADPCM WAV, and anything soundfile can't read
     try:

@@ -3,6 +3,13 @@
 Correction critique vs version originale :
 - start_offset était systématiquement passé à 0.0 pour les exports non-preview
   même quand calculé correctement pour SHORT → BUG CORRIGÉ.
+
+Encodage en une seule passe :
+- Les frames sont pipées directement vers FFmpeg (rawvideo sur stdin), qui les
+  encode et les mixe avec l'audio en un seul appel. Auparavant, les frames étaient
+  écrites via cv2.VideoWriter (codec mp4v, avec pertes) dans un fichier temporaire,
+  puis ce fichier était intégralement ré-encodé par FFmpeg pour ajouter l'audio :
+  deux passes d'encodage, donc une perte de qualité superflue et un export plus long.
 """
 from __future__ import annotations
 
@@ -10,16 +17,18 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
-import cv2
 import numpy as np
 
 from app.audio import compute_audio_features
 from app.errors import ExportError, FFmpegError
+from app.logger import get_logger
 from app.models import RenderSettings
 from app.presets import FPS, WIDTH, HEIGHT
 from app.renderer import load_cover_image, render_frame
+
+_log = get_logger("exporter")
 
 
 def require_ffmpeg() -> None:
@@ -40,24 +49,17 @@ def ffmpeg_has_nvenc() -> bool:
             text=True,
         )
         return "h264_nvenc" in (result.stdout + result.stderr)
-    except Exception:
+    except Exception as exc:
+        _log.debug("Détection NVENC échouée, bascule sur CPU: %s", exc)
         return False
 
 
-def run_ffmpeg(cmd: list[str]) -> None:
-    """Lance une commande FFmpeg et lève une exception en cas d'erreur."""
+def _read_ffmpeg_log(path: Path) -> str:
+    """Lit la fin du log stderr de FFmpeg pour le détail d'une erreur."""
     try:
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    except FileNotFoundError as exc:
-        raise FFmpegError(
-            "FFmpeg est introuvable. Installez-le et ajoutez-le au PATH.",
-            detail=str(exc),
-        ) from exc
-    if result.returncode != 0:
-        raise FFmpegError(
-            "FFmpeg a rencontré une erreur lors de l'encodage.",
-            detail="Erreur FFmpeg :\n" + result.stderr[-3000:],
-        )
+        return "Erreur FFmpeg :\n" + path.read_text(encoding="utf-8", errors="replace")[-3000:]
+    except OSError:
+        return "Erreur FFmpeg (log indisponible)."
 
 
 def open_file(path: str) -> None:
@@ -68,20 +70,28 @@ def open_file(path: str) -> None:
         # Linux/macOS — ouvrir avec xdg-open si disponible
         try:
             subprocess.Popen(["xdg-open", path])
-        except Exception:
-            pass
-    except Exception:
-        pass
+        except Exception as exc:
+            _log.debug("xdg-open a échoué pour %r: %s", path, exc)
+    except Exception as exc:
+        _log.debug("Impossible d'ouvrir %r: %s", path, exc)
 
 
-def _add_audio_to_video(
-    temp_video: str,
+def _start_ffmpeg_pipe(
     audio_path: str,
     output_path: str,
-    duration: float,
+    width: int,
+    height: int,
+    fps: int,
     start_offset: float,
-) -> None:
-    """Combine la vidéo muette avec l'audio en découpant depuis start_offset.
+    video_duration: float,
+    stderr_log_path: Path,
+) -> tuple[subprocess.Popen, Any]:
+    """Démarre FFmpeg en attente de frames brutes (BGR) sur stdin.
+
+    FFmpeg encode et mixe avec l'audio au fil de l'eau, en une seule passe.
+    Le codec (NVENC ou CPU) est choisi une fois avant de commencer à envoyer des
+    frames : un éventuel fallback en cours de flux impliquerait de relancer tout
+    le rendu, ce qui coûterait plus cher que le bénéfice du GPU.
 
     Le -ss est placé AVANT l'input audio pour un seek précis (fast seek).
     """
@@ -89,12 +99,14 @@ def _add_audio_to_video(
 
     base_cmd = [
         "ffmpeg", "-y",
+        "-f", "rawvideo", "-pix_fmt", "bgr24",
+        "-s", f"{width}x{height}", "-r", str(fps),
+        "-i", "-",
         "-ss", f"{seek:.3f}",
         "-i", audio_path,
-        "-i", temp_video,
-        "-t", f"{duration:.3f}",
-        "-map", "1:v:0",
-        "-map", "0:a:0",
+        "-t", f"{video_duration:.3f}",
+        "-map", "0:v:0",
+        "-map", "1:a:0",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
         "-b:a", "320k",
@@ -105,7 +117,7 @@ def _add_audio_to_video(
     ]
 
     if ffmpeg_has_nvenc():
-        nvenc_cmd = base_cmd + [
+        cmd = base_cmd + [
             "-c:v", "h264_nvenc",
             "-preset", "p6",
             "-tune", "hq",
@@ -114,19 +126,26 @@ def _add_audio_to_video(
             "-b:v", "0",
             output_path,
         ]
-        try:
-            run_ffmpeg(nvenc_cmd)
-            return
-        except (FFmpegError, RuntimeError):
-            pass  # Fallback sur libx264
+    else:
+        cmd = base_cmd + [
+            "-c:v", "libx264",
+            "-preset", "slow",
+            "-crf", "16",
+            output_path,
+        ]
 
-    cpu_cmd = base_cmd + [
-        "-c:v", "libx264",
-        "-preset", "slow",
-        "-crf", "16",
-        output_path,
-    ]
-    run_ffmpeg(cpu_cmd)
+    stderr_log = open(stderr_log_path, "w+b")
+    try:
+        proc = subprocess.Popen(
+            cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=stderr_log,
+        )
+    except FileNotFoundError as exc:
+        stderr_log.close()
+        raise FFmpegError(
+            "FFmpeg est introuvable. Installez-le et ajoutez-le au PATH.",
+            detail=str(exc),
+        ) from exc
+    return proc, stderr_log
 
 
 def render_video(
@@ -174,7 +193,7 @@ def render_video(
             detail=f"Nom: {out_name!r}",
         )
 
-    temp_video = str(out_dir / "_temp_tac_no_audio.mp4")
+    stderr_log_path = out_dir / "_tac_ffmpeg_export.log"
 
     if progress_callback:
         progress_callback("Analyse audio bass/kick/aigus...")
@@ -208,21 +227,21 @@ def render_video(
     smooth_kick = 0.0
     vinyl_angle = 0.0
 
-    writer = cv2.VideoWriter(
-        temp_video,
-        cv2.VideoWriter_fourcc(*"mp4v"),
-        FPS,
-        (out_w, out_h),
+    total = len(features["rms"])
+    video_duration = total / FPS
+
+    # BUG FIX (conservé) : start_offset correctement transmis à l'audio
+    # (était 0.0 en dur dans l'original).
+    proc, stderr_log = _start_ffmpeg_pipe(
+        settings.audio_path,
+        settings.output_path,
+        out_w, out_h, FPS,
+        settings.start_offset,
+        video_duration,
+        stderr_log_path,
     )
-    if not writer.isOpened():
-        raise ExportError(
-            "Export interrompu.",
-            detail="Impossible d'ouvrir le moteur vidéo OpenCV (cv2.VideoWriter).",
-        )
 
     try:
-        total = len(features["rms"])
-
         for i in range(total):
             smooth_kick = smooth_kick * 0.68 + float(features["kick"][i]) * 0.32
 
@@ -255,29 +274,40 @@ def render_video(
                     detail=f"Erreur au rendu de la frame {i}: {exc}",
                 ) from exc
 
-            writer.write(frame)
+            try:
+                proc.stdin.write(frame.tobytes())
+            except (BrokenPipeError, OSError) as exc:
+                raise FFmpegError(
+                    "FFmpeg s'est arrêté prématurément pendant le rendu.",
+                    detail=_read_ffmpeg_log(stderr_log_path),
+                ) from exc
 
             if progress_callback and i % FPS == 0:
                 pct = i / max(1, total - 1) * 100
                 progress_callback(f"Rendu : {pct:.1f}%")
 
-    finally:
-        writer.release()
+        proc.stdin.close()
+    except BaseException:
+        # Erreur pendant le rendu ou l'écriture : on arrête FFmpeg proprement plutôt
+        # que de le laisser attendre indéfiniment plus de frames sur stdin.
+        proc.kill()
+        proc.wait()
+        stderr_log.close()
+        raise
 
     if progress_callback:
-        progress_callback("Encodage MP4 qualité max avec musique...")
+        progress_callback("Finalisation de l'encodage...")
 
-    # BUG FIX : start_offset correctement transmis (était 0.0 en dur dans l'original)
-    _add_audio_to_video(
-        temp_video,
-        settings.audio_path,
-        settings.output_path,
-        features["duration"],
-        settings.start_offset,  # ← CORRIGÉ : était 0.0 systématiquement
-    )
+    returncode = proc.wait()
+    stderr_log.close()
+    if returncode != 0:
+        raise FFmpegError(
+            "FFmpeg a rencontré une erreur lors de l'encodage.",
+            detail=_read_ffmpeg_log(stderr_log_path),
+        )
 
     try:
-        os.remove(temp_video)
+        stderr_log_path.unlink()
     except OSError:
         pass
 
@@ -299,5 +329,5 @@ def _extract_thumbnail(video_path: str) -> None:
             thumb,
         ]
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.debug("Extraction de la miniature échouée pour %r: %s", video_path, exc)

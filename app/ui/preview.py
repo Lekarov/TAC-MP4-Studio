@@ -63,6 +63,12 @@ class PreviewMixin:
         threading.Thread(target=worker, daemon=True).start()
 
     def _draw_waveform(self, cursor_t=None):
+        """Redessine la waveform complète (barres + sélection + timestamps + curseur).
+
+        La ligne de curseur porte le tag "cursor" : les mises à jour suivantes pendant
+        la lecture passent par _update_waveform_cursor(), qui la déplace sans redessiner
+        les barres (évite de recréer des centaines d'items Canvas 5x/seconde).
+        """
         from app.ui.app import ACCENT, ACCLT, MUTED, SUCCESS
         c = self._waveform_canvas
         if c is None or self.waveform_data is None:
@@ -96,10 +102,6 @@ class PreviewMixin:
             c.create_rectangle(x0, 0, x1, h, fill=ACCENT, stipple="gray25", outline="")
             c.create_line(x0, 0, x0, h, fill=ACCLT, width=1)
 
-        if cursor_t is not None and self.audio_total_duration > 0:
-            cx = (cursor_t / self.audio_total_duration) * w
-            c.create_line(cx, 0, cx, h, fill=SUCCESS, width=2)
-
         dur = self.audio_total_duration
         if dur > 0:
             tot = int(dur)
@@ -107,6 +109,27 @@ class PreviewMixin:
             c.create_text(4,     h-4, text="0:00",                     anchor="sw", fill=MUTED, font=("Segoe UI", 7))
             c.create_text(w/2,   h-4, text=f"{mid_s//60}:{mid_s%60:02d}", anchor="s",  fill=MUTED, font=("Segoe UI", 7))
             c.create_text(w-4,   h-4, text=f"{tot//60}:{tot%60:02d}",  anchor="se", fill=MUTED, font=("Segoe UI", 7))
+
+        # Ligne de curseur : item dédié, réutilisé par _update_waveform_cursor()
+        cx = (cursor_t / dur) * w if (cursor_t is not None and dur > 0) else -10
+        c.create_line(cx, 0, cx, h, fill=SUCCESS, width=2, tags=("cursor",))
+
+    def _update_waveform_cursor(self, cursor_t):
+        """Déplace uniquement la ligne de curseur pendant la lecture, sans redessiner
+        les barres de la waveform (appelé ~5x/seconde par _tick_waveform_cursor)."""
+        c = self._waveform_canvas
+        if c is None:
+            return
+        dur = self.audio_total_duration
+        w = c.winfo_width()
+        h = c.winfo_height()
+        if dur <= 0 or w < 2 or h < 2:
+            return
+        cx = (cursor_t / dur) * w
+        if c.find_withtag("cursor"):
+            c.coords("cursor", cx, 0, cx, h)
+        else:
+            self._draw_waveform(cursor_t=cursor_t)
 
     def _on_waveform_click(self, event):
         c = self._waveform_canvas
@@ -133,7 +156,7 @@ class PreviewMixin:
             last_cursor = getattr(self, "_last_waveform_cursor", -1.0)
             if abs(current_cursor - last_cursor) >= 0.1:
                 self._last_waveform_cursor = current_cursor
-                self._draw_waveform(cursor_t=current_cursor)
+                self._update_waveform_cursor(current_cursor)
         try:
             self.after(200, self._tick_waveform_cursor)
         except tkinter.TclError:

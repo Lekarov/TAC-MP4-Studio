@@ -7,7 +7,7 @@
 Transforme n'importe quel fichier audio en vidéo visualisée frame par frame,  
 synchronisée beat par beat, exportée en qualité broadcast.
 
-![Version](https://img.shields.io/badge/version-1.9.0-7c3aed?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.9.1-7c3aed?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.8+-5C3EE8?style=flat-square&logo=opencv&logoColor=white)
 ![CustomTkinter](https://img.shields.io/badge/UI-CustomTkinter-1F6AA5?style=flat-square)
@@ -31,7 +31,7 @@ Audio ──► Analyse librosa ──► Features (bass / kick / rms / spec / r
                    │        Fond        │     Glow / Vignette │
                    └────────────────────┴────────────────────┘
                                         │
-                         FFmpeg ──► MP4  (NVENC GPU · libx264 CPU)
+                         FFmpeg ──► MP4  (NVENC GPU · libx264 CPU · encodage 1 passe)
 ```
 
 ---
@@ -189,10 +189,12 @@ TAC-MP4-Studio/
     ├── vinyl.py               Disque vinyle rotatif + pochette
     │
     └── ui/
-        ├── app.py             App — état · lifecycle · navigation · éditeur
+        ├── app.py             App — état · lifecycle · navigation · construction éditeur
         ├── editor.py          EditorMixin — onglets + callbacks + gestion presets
+        ├── export_ui.py       ExportMixin — projet · settings courants · export simple/DUAL/test
         ├── pages.py           PagesMixin — accueil · historique · turbo
         ├── preview.py         PreviewMixin — preview live · waveform · audio
+        ├── turbo.py           TurboMixin — export par lot (mode Turbo)
         └── widgets.py         Widgets réutilisables
 ```
 
@@ -200,7 +202,7 @@ TAC-MP4-Studio/
 
 ```
 App
- ├─ EditorMixin · PagesMixin · PreviewMixin
+ ├─ EditorMixin · PagesMixin · PreviewMixin · TurboMixin · ExportMixin
  ├─ renderer ──► spectrum · vinyl · particles
  ├─ exporter ──► renderer · audio
  ├─ errors · logger
@@ -282,6 +284,14 @@ FFmpeg doit être installé séparément sur la machine cible.
 ---
 
 ## Changelog
+
+### v1.9.1 — Export en une passe + perf + maintenabilité
+- **Export vidéo en une seule passe** : les frames sont pipées directement vers FFmpeg (`stdin` rawvideo) au lieu de passer par un fichier temporaire `cv2.VideoWriter` (mp4v) ré-encodé ensuite. Plus rapide, et supprime une perte de qualité intermédiaire.
+- Erreurs FFmpeg lues depuis un fichier log dédié (au lieu d'un pipe stderr non lu, qui pouvait bloquer)
+- Waveform de la preview : le curseur de lecture se déplace sans redessiner toutes les barres (`_update_waveform_cursor`), au lieu d'un redraw complet 5x/seconde
+- `app/ui/app.py` découpé : extraction de `TurboMixin` (`turbo.py`) et `ExportMixin` (`export_ui.py`) — 2237 → ~1460 lignes
+- Exceptions silencieuses de `audio.py`/`exporter.py` désormais tracées (niveau debug) dans `tac.log`
+- Bornes de version ajoutées dans `requirements.txt`
 
 ### v1.9 — Bibliothèque de presets unifiée + export cards
 - Onglet ⚡ refactorisé : bibliothèque unifiée intégrés + perso dans une seule liste
