@@ -28,8 +28,14 @@ except ImportError:
 from app.config import load_config, save_config, DEFAULT_CREATIONS_DIR
 from app.errors import AudioImportError, ConfigError, ImageImportError
 from app.logger import get_logger, log_exception
+# NB: RenderSettings et les constantes presets ci-dessous ne sont pas toutes
+# utilisées directement dans ce fichier — turbo.py, export_ui.py et preview.py
+# les importent à l'exécution via `from app.ui.app import ...` (mêmes conventions
+# que pour les couleurs/fonts). Ne pas les retirer sans vérifier ces mixins.
+from app.models import RenderSettings
 from app.presets import (
     GLOBAL_PRESETS, PARTICLE_PRESETS, SMOKE_COLORS, SMOKE_PRESETS, SPECTRUM_STYLES,
+    PREVIEW_SECONDS, PREVIEW_W, PREVIEW_H, SHORT_WIDTH, SHORT_HEIGHT, FPS,
 )
 from app.renderer import load_cover_image, render_frame, get_font_names
 from app.ui.preview import PreviewMixin
