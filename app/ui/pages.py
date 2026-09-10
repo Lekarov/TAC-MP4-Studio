@@ -182,7 +182,7 @@ class PagesMixin:
                                  height=40, width=340)
         hist_btn.pack(pady=(0, 6))
         ctk.CTkButton(inner, text="⚡ TURBO — Production rapide",
-                      command=self.show_turbo,
+                      command=self.show_turbo_choice,
                       fg_color="transparent",
                       hover_color="#161616",
                       text_color="#f59e0b",
@@ -341,6 +341,10 @@ class PagesMixin:
             _btn(btns, "▶ Ouvrir vidéo",
                  lambda v=item.get("video", ""): open_file(v),
                  small=True, width=110, height=28).pack(side="left", padx=(0, 6))
+            if item.get("type") != "short":
+                _btn(btns, "🎬 Convertir en Short",
+                     lambda i=item: self._convert_to_short(i),
+                     small=True, width=160, height=28, accent=True).pack(side="left", padx=(0, 6))
             _btn(btns, "✕ Supprimer",
                  lambda i=item: self._delete_history_item(i),
                  small=True, width=100, height=28, danger=True).pack(side="left")
@@ -379,6 +383,58 @@ class PagesMixin:
             self.show_history()
 
     # ══════════════════════════════════════════════════════════════════════════
+    # PAGE CHOIX TURBO
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def show_turbo_choice(self):
+        import customtkinter as ctk
+        from app.ui.app import (
+            BG, SURF2, BORDER, TEXT, MUTED, FONT_H1, FONT_H2, FONT_SM, FONT_MU, _btn,
+        )
+        self._clear_main()
+        self._set_status("⚡ Turbo — choix du mode")
+
+        outer = ctk.CTkFrame(self.main, fg_color=BG)
+        outer.pack(fill="both", expand=True)
+
+        center = ctk.CTkFrame(outer, fg_color="transparent")
+        center.place(relx=0.5, rely=0.46, anchor="center")
+
+        ctk.CTkLabel(center, text="⚡ Mode Turbo", font=FONT_H1,
+                     text_color="#f59e0b").pack(pady=(0, 4))
+        ctk.CTkLabel(center, text="Choisissez comment produire vos vidéos en série",
+                     text_color=MUTED, font=FONT_SM).pack(pady=(0, 26))
+
+        row = ctk.CTkFrame(center, fg_color="transparent")
+        row.pack()
+
+        def _choice_card(parent, title, desc, command):
+            card = ctk.CTkFrame(parent, fg_color=SURF2, corner_radius=14,
+                                border_color=BORDER, border_width=1,
+                                width=260, height=200)
+            card.pack(side="left", padx=12)
+            card.pack_propagate(False)
+            ctk.CTkLabel(card, text=title, font=FONT_H2, text_color=TEXT,
+                         wraplength=220, justify="center").pack(pady=(28, 10), padx=16)
+            ctk.CTkLabel(card, text=desc, text_color=MUTED, font=FONT_MU,
+                         wraplength=210, justify="center").pack(padx=16)
+            _btn(card, "Choisir", command, accent=True, width=160,
+                 height=36).pack(side="bottom", pady=18)
+            return card
+
+        _choice_card(
+            row, "Interface originale",
+            "Ajoutez vos fichiers un par un et choisissez leur pochette manuellement.",
+            self.show_turbo)
+        _choice_card(
+            row, "Turbo V2",
+            "Sélectionnez un dossier : musiques et pochettes de même nom sont "
+            "appariées automatiquement.",
+            self.show_turbo_v2)
+
+        _btn(center, "← Accueil", self.show_home, small=True, width=140).pack(pady=(26, 0))
+
+    # ══════════════════════════════════════════════════════════════════════════
     # PAGE TURBO
     # ══════════════════════════════════════════════════════════════════════════
 
@@ -392,6 +448,7 @@ class PagesMixin:
         )
         self._clear_main()
         self._turbo_view_active = True
+        self._turbo_mode = "v1"
         self._set_status("⚡ Turbo")
 
         outer = ctk.CTkFrame(self.main, fg_color=BG)
@@ -400,7 +457,7 @@ class PagesMixin:
         top = ctk.CTkFrame(outer, fg_color="transparent")
         top.pack(fill="x", pady=(0, 14))
         ctk.CTkLabel(top, text="⚡ Turbo", font=FONT_H1, text_color="#f59e0b").pack(side="left")
-        _btn(top, "← Accueil", self.show_home, small=True, width=120).pack(side="right")
+        _btn(top, "← Turbo", self.show_turbo_choice, small=True, width=110).pack(side="right")
         ctk.CTkLabel(top, text="Production rapide · sans preview",
                      text_color=MUTED, font=FONT_MU).pack(side="left", padx=(14, 0))
 
@@ -544,7 +601,9 @@ class PagesMixin:
         status_frame.pack(side="left")
         status_frame.pack_propagate(False)
 
-        status_lbl = ctk.CTkLabel(status_frame, text=item["status"], text_color=MUTED,
+        already_done = item["status"].startswith("✅")
+        status_lbl = ctk.CTkLabel(status_frame, text=item["status"],
+                                   text_color=SUCCESS if already_done else MUTED,
                                    font=FONT_MU, anchor="w")
         status_lbl.pack(side="left")
         item["_status_lbl"] = status_lbl
@@ -557,6 +616,13 @@ class PagesMixin:
         )
         item["_folder_btn"] = folder_btn
         item["_folder_btn_packed"] = False
+
+        v2_output = item.get("_v2_output")
+        if already_done and v2_output:
+            from app.exporter import open_file
+            folder_btn.configure(command=lambda d=str(Path(v2_output).parent): open_file(d))
+            folder_btn.pack(side="left", padx=(2, 0))
+            item["_folder_btn_packed"] = True
 
         def _remove(i=item, r=row):
             if i in self._turbo_queue:
@@ -616,6 +682,123 @@ class PagesMixin:
             added += 1
         if added:
             self._set_status(f"⚡ Turbo — {len(self._turbo_queue)} fichier(s)")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # PAGE TURBO V2
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def show_turbo_v2(self):
+        import customtkinter as ctk
+        import tkinter as tk
+        from pathlib import Path
+        from app.ui.app import (
+            BG, SURF2, SURF3, BORDER, ACCENT, ACCLT, TEXT, MUTED, WARN,
+            FONT_H1, FONT_SM, FONT_MU, _btn, _card,
+        )
+        self._clear_main()
+        self._turbo_v2_view_active = True
+        self._turbo_mode = "v2"
+        self._turbo_v2_autoload_if_empty()
+        self._set_status("⚡ Turbo V2")
+
+        outer = ctk.CTkFrame(self.main, fg_color=BG)
+        outer.pack(fill="both", expand=True, padx=32, pady=24)
+
+        top = ctk.CTkFrame(outer, fg_color="transparent")
+        top.pack(fill="x", pady=(0, 14))
+        ctk.CTkLabel(top, text="⚡ Turbo V2", font=FONT_H1, text_color="#f59e0b").pack(side="left")
+        _btn(top, "← Turbo", self.show_turbo_choice, small=True, width=110).pack(side="right")
+        ctk.CTkLabel(top, text="Dossier de paires musique + pochette (même nom)",
+                     text_color=MUTED, font=FONT_MU).pack(side="left", padx=(14, 0))
+
+        ctrl = _card(outer)
+        ctrl.pack(fill="x", pady=(0, 10))
+        ci = ctk.CTkFrame(ctrl, fg_color="transparent")
+        ci.pack(fill="x", padx=16, pady=12)
+
+        r1 = ctk.CTkFrame(ci, fg_color="transparent")
+        r1.pack(fill="x", pady=(0, 8))
+
+        _btn(r1, "📁 Choisir le dossier", self._turbo_v2_pick_folder,
+             accent=True, small=True, height=32, width=180).pack(side="left")
+        _btn(r1, "🔁", self._turbo_v2_rescan_folder,
+             small=True, width=32, height=28).pack(side="left", padx=(4, 0))
+
+        folder_name = Path(self._turbo_v2_last_folder).name if getattr(
+            self, "_turbo_v2_last_folder", "") else "Aucun dossier choisi"
+        ctk.CTkLabel(r1, text=folder_name, text_color=MUTED, font=FONT_MU,
+                     width=160, anchor="w").pack(side="left", padx=(8, 24))
+
+        ctk.CTkLabel(r1, text="Fond", text_color=MUTED, font=FONT_MU, width=38, anchor="w").pack(side="left")
+        self._turbo_bg_var = tk.StringVar(value=Path(self._turbo_bg_image).name if self._turbo_bg_image else "")
+        ctk.CTkEntry(r1, textvariable=self._turbo_bg_var,
+                     placeholder_text="Image de fond commune (optionnel)",
+                     fg_color=SURF3, border_color=BORDER, text_color=TEXT,
+                     font=FONT_MU, width=180, state="readonly").pack(side="left", padx=(4, 0))
+        _btn(r1, "📂", self._turbo_pick_bg, small=True, width=32, height=28).pack(side="left", padx=(4, 24))
+
+        ctk.CTkLabel(r1, text="Preset ★", text_color=MUTED, font=FONT_MU, width=60, anchor="w").pack(side="left")
+        fav_names = [n for n in self.user_presets if n in self.user_preset_favorites]
+        if not fav_names:
+            fav_names = list(self.user_presets.keys())
+        turbo_preset_values = fav_names if fav_names else ["(aucun preset — créez-en un)"]
+        self._turbo_preset_var = tk.StringVar(value=turbo_preset_values[0])
+        ctk.CTkComboBox(r1, variable=self._turbo_preset_var,
+                        values=turbo_preset_values,
+                        fg_color=SURF3, border_color=BORDER,
+                        button_color=SURF2, button_hover_color=BORDER,
+                        dropdown_fg_color=SURF2, text_color=TEXT,
+                        font=FONT_SM, width=190).pack(side="left", padx=(4, 6))
+        self._turbo_text_badge = ctk.CTkLabel(
+            r1, text="● Texte ON", text_color=MUTED, font=FONT_MU, width=72, anchor="w")
+        self._turbo_text_badge.pack(side="left", padx=(0, 10))
+
+        ctk.CTkLabel(r1, text="Format", text_color=MUTED, font=FONT_MU, width=50, anchor="w").pack(side="left")
+        self._turbo_format_var = tk.StringVar(value="COMPLET")
+        ctk.CTkComboBox(r1, variable=self._turbo_format_var,
+                        values=["COMPLET", "SHORT", "VERTICAL"],
+                        fg_color=SURF3, border_color=BORDER,
+                        button_color=SURF2, button_hover_color=BORDER,
+                        dropdown_fg_color=SURF2, text_color=TEXT,
+                        font=FONT_SM, width=130).pack(side="left", padx=(4, 0))
+
+        self._turbo_preset_var.trace_add("write", lambda *_: self._turbo_update_text_ui())
+        self._turbo_update_text_ui()
+
+        r2 = ctk.CTkFrame(ci, fg_color="transparent")
+        r2.pack(fill="x", pady=(6, 0))
+        _btn(r2, "🎲 Aperçu aléatoire", self._turbo_preview_random,
+             small=True, height=32, width=160).pack(side="left")
+        self._turbo_stop_btn = _btn(r2, "⏹ Stopper", self._turbo_stop_fn,
+                                     height=32, width=110, danger=True)
+        self._turbo_stop_btn.pack(side="right", padx=(6, 0))
+        self._turbo_launch_btn = _btn(r2, "▶ Lancer", self._turbo_start,
+                                       accent=True, height=32, width=110)
+        self._turbo_launch_btn.pack(side="right")
+
+        hdr = ctk.CTkFrame(outer, fg_color=SURF3, corner_radius=6)
+        hdr.pack(fill="x", pady=(0, 2))
+        for col_txt, col_w in [("Fichier audio", 168), ("Pochette", 52),
+                                ("Artiste", 138), ("Titre", 168), ("Statut", 86)]:
+            ctk.CTkLabel(hdr, text=col_txt, text_color=MUTED, font=FONT_MU,
+                         width=col_w, anchor="w").pack(side="left", padx=6, pady=5)
+        ctk.CTkLabel(hdr, text="", width=42).pack(side="right")
+
+        self._turbo_scroll = ctk.CTkScrollableFrame(outer, fg_color="transparent",
+                                                     scrollbar_button_color=SURF3,
+                                                     scrollbar_button_hover_color=ACCENT)
+        self._turbo_scroll.pack(fill="both", expand=True, pady=(0, 0))
+
+        if self._turbo_queue:
+            for item in self._turbo_queue:
+                self._turbo_add_row_ui(item)
+        else:
+            self._turbo_empty_lbl = ctk.CTkLabel(
+                self._turbo_scroll,
+                text="Choisissez un dossier contenant vos musiques et pochettes\n"
+                     "(même nom de fichier, ex : titre1.mp3 + titre1.png).",
+                text_color=MUTED, font=FONT_SM, justify="center")
+            self._turbo_empty_lbl.pack(pady=40)
 
     def show_presets(self):
         pass

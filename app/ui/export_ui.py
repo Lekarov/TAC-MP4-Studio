@@ -4,6 +4,7 @@ Extrait de app/ui/app.py.
 """
 from __future__ import annotations
 
+import dataclasses
 import re
 import shutil
 import threading
@@ -322,6 +323,7 @@ class ExportMixin:
                         "audio":      settings_complet.audio_path,
                         "image":      settings_complet.image_path,
                         "type":       "complet",
+                        "settings":   dataclasses.asdict(settings_complet),
                         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                     })
 
@@ -337,6 +339,7 @@ class ExportMixin:
                         "audio":      settings_short.audio_path,
                         "image":      settings_short.image_path,
                         "type":       "short",
+                        "settings":   dataclasses.asdict(settings_short),
                         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                     })
 
@@ -381,6 +384,7 @@ class ExportMixin:
                         "audio":      settings.audio_path,
                         "image":      settings.image_path,
                         "type":       mode.lower(),
+                        "settings":   dataclasses.asdict(settings),
                         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                     })
                     self._persist_now()
@@ -399,6 +403,114 @@ class ExportMixin:
                     _on_error(ExportError("Export interrompu.", detail=str(exc)), "Erreur export")
                 finally:
                     self.is_rendering = False
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # HISTORIQUE — conversion rapide en Short (mêmes réglages visuels)
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _convert_to_short(self, item):
+        """Régénère une création de l'historique au format SHORT (1min, 9:16),
+        avec exactement les mêmes réglages visuels que l'export d'origine."""
+        from app.ui.app import WARN, DANGER, SUCCESS
+        import time
+
+        if self.is_rendering:
+            messagebox.showwarning("Export en cours", "Attends la fin de l'export en cours.")
+            return
+
+        settings_dict = item.get("settings")
+        audio_path = item.get("audio", "")
+        image_path = item.get("image", "")
+        if not settings_dict or not audio_path or not image_path:
+            messagebox.showerror(
+                "Conversion impossible",
+                "Cette création ne contient pas les réglages visuels "
+                "(ancienne entrée de l'historique). Impossible de générer un Short.",
+            )
+            return
+        if not Path(audio_path).exists() or not Path(image_path).exists():
+            messagebox.showerror(
+                "Conversion impossible",
+                "Fichier audio ou pochette introuvable (déplacé ou supprimé).",
+            )
+            return
+
+        folder = Path(item.get("folder", "") or Path(audio_path).parent)
+        folder.mkdir(parents=True, exist_ok=True)
+
+        base_name = item.get("name", "export")
+        if base_name.upper().endswith("_SHORT"):
+            base_name = base_name[:-6]
+        file_name = f"{base_name}_SHORT"
+        out_path = folder / f"{file_name}.mp4"
+        ctr = 2
+        while out_path.exists():
+            out_path = folder / f"{file_name}_{ctr}.mp4"
+            ctr += 1
+
+        settings = RenderSettings(**settings_dict)
+        settings.audio_path    = audio_path
+        settings.image_path    = image_path
+        settings.output_path   = str(out_path)
+        settings.output_width  = SHORT_WIDTH
+        settings.output_height = SHORT_HEIGHT
+
+        try:
+            total = float(sf.info(audio_path).frames / sf.info(audio_path).samplerate)
+        except Exception:
+            total = 0.0
+        if total > 60:
+            settings.duration_limit = 60.0
+            settings.start_offset   = max(0.0, (total / 2.0) - 30.0)
+        else:
+            settings.duration_limit = None
+            settings.start_offset   = 0.0
+
+        self.is_rendering = True
+        self._set_status("Export SHORT...", WARN)
+        self._show_export_overlay("Conversion en Short")
+
+        def _on_error(exc_obj, kind):
+            log_exception(exc_obj, context="_convert_to_short worker")
+            msg = getattr(exc_obj, "message", str(exc_obj))
+            self.after(0, lambda: messagebox.showerror(kind, msg))
+            self.after(0, self._hide_export_overlay)
+            self.after(0, lambda: self._set_status("Erreur export", DANGER))
+
+        def worker():
+            try:
+                render_video(settings,
+                              progress_callback=lambda t: self.after(
+                                  0, lambda txt=t: self._update_export_overlay(txt)))
+                self.history.append({
+                    "name":       file_name,
+                    "folder":     str(folder),
+                    "video":      settings.output_path,
+                    "audio":      settings.audio_path,
+                    "image":      settings.image_path,
+                    "type":       "short",
+                    "settings":   dataclasses.asdict(settings),
+                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                })
+                self._persist_now()
+                self.after(0, lambda: messagebox.showinfo(
+                    "Terminé ✓", f"Short créé :\n{settings.output_path}"))
+                self.after(0, self._hide_export_overlay)
+                self.after(0, lambda: open_file(str(folder)))
+                self.after(0, lambda: self._set_status("Export SHORT terminé ✓", SUCCESS))
+                self.after(0, self.show_history)
+            except FFmpegError as exc:
+                _on_error(exc, "FFmpeg")
+            except ExportError as exc:
+                _on_error(exc, "Export")
+            except AudioImportError as exc:
+                _on_error(exc, "Audio")
+            except Exception as exc:
+                _on_error(ExportError("Export interrompu.", detail=str(exc)), "Erreur export")
+            finally:
+                self.is_rendering = False
 
         threading.Thread(target=worker, daemon=True).start()
 

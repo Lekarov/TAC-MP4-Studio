@@ -30,6 +30,8 @@ def default_config() -> dict:
     return {
         "project_root": str(DEFAULT_CREATIONS_DIR),
         "history": [],
+        "turbo_v2_history": {},
+        "turbo_v2_last_folder": "",
         "user_presets": {},
         "hidden_builtin_presets": [],
         "settings": {

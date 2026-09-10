@@ -42,6 +42,7 @@ from app.ui.preview import PreviewMixin
 from app.ui.editor import EditorMixin
 from app.ui.pages import PagesMixin
 from app.ui.turbo import TurboMixin
+from app.ui.turbo_v2 import TurboV2Mixin
 from app.ui.export_ui import ExportMixin
 
 _log = get_logger("ui")
@@ -54,7 +55,7 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 # ── Version ───────────────────────────────────────────────────────────────────
-VERSION = "1.9.1"   # v1.9.1 — Export FFmpeg en une passe + perf + découpage app.py
+VERSION = "1.10.0"  # v1.10.0 — Turbo V2 (dossier auto-apparié) + conversion Short depuis l'historique
 
 BG      = "#0a0a0a"
 SURF    = "#111111"
@@ -154,7 +155,7 @@ class _Tooltip:
         self._tip.wm_geometry(f"+{x - 60}+{y}")
 
 
-class App(PagesMixin, EditorMixin, PreviewMixin, TurboMixin, ExportMixin,
+class App(PagesMixin, EditorMixin, PreviewMixin, TurboMixin, TurboV2Mixin, ExportMixin,
           ctk.CTk if not _DND_AVAILABLE else TkinterDnD.Tk):
 
     def __init__(self) -> None:
@@ -188,6 +189,10 @@ class App(PagesMixin, EditorMixin, PreviewMixin, TurboMixin, ExportMixin,
         self.project_root = self.config_data.get("project_root", str(DEFAULT_CREATIONS_DIR))
         Path(self.project_root).mkdir(parents=True, exist_ok=True)
         self.history: list[dict] = self.config_data.get("history", [])
+        self.turbo_v2_history: dict = self.config_data.get("turbo_v2_history", {})
+        if not isinstance(self.turbo_v2_history, dict):
+            self.turbo_v2_history = {}
+        self._turbo_v2_last_folder: str = self.config_data.get("turbo_v2_last_folder", "")
 
         # ── Tkinter vars ───────────────────────────────────────────────────────
         self.title_text       = tk.StringVar(value=settings.get("title_text", ""))
@@ -252,6 +257,8 @@ class App(PagesMixin, EditorMixin, PreviewMixin, TurboMixin, ExportMixin,
         self._turbo_image: str          = ""
         self._turbo_bg_image: str       = ""
         self._turbo_view_active: bool   = False
+        self._turbo_v2_view_active: bool = False
+        self._turbo_mode: str           = "v1"
 
         # Update 7 — spectre 3 couleurs + réactivité
         self.spectrum_color_mid  = settings.get("spectrum_color_mid",  "#ffffff")
@@ -419,6 +426,7 @@ class App(PagesMixin, EditorMixin, PreviewMixin, TurboMixin, ExportMixin,
 
     def _clear_main(self):
         self._turbo_view_active = False
+        self._turbo_v2_view_active = False
         # Annuler l'animation de l'accueil (fix fuite mémoire Update 8)
         if hasattr(self, "_home_anim_job") and self._home_anim_job:
             try:
@@ -1266,6 +1274,8 @@ class App(PagesMixin, EditorMixin, PreviewMixin, TurboMixin, ExportMixin,
         self._persist_job = None
         self.config_data["project_root"] = self.project_root
         self.config_data["history"]      = self.history
+        self.config_data["turbo_v2_history"] = self.turbo_v2_history
+        self.config_data["turbo_v2_last_folder"] = getattr(self, "_turbo_v2_last_folder", "")
         self.config_data["settings"] = {
             "title_text":       self.title_text.get(),
             "artist_text":      self.artist_text.get(),

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import tempfile
 import threading
 from pathlib import Path
 from tkinter import filedialog, messagebox
@@ -123,6 +124,18 @@ class TurboMixin:
             messagebox.showwarning("Turbo", "Aucun fichier en attente.")
             return
 
+        mode = getattr(self, "_turbo_mode", "v1")
+
+        if mode == "v2":
+            folder = getattr(self, "_turbo_v2_last_folder", "")
+            if not folder or not Path(folder).is_dir():
+                messagebox.showerror("Turbo V2", "Dossier source introuvable ou inaccessible.")
+                return
+            if not self._turbo_v2_check_folder_writable(folder):
+                return
+            if not self._turbo_v2_check_disk_space(folder, len(pending)):
+                return
+
         preset_name = self._turbo_preset_var.get() if hasattr(self, "_turbo_preset_var") else ""
         preset = self.user_presets.get(preset_name, {})
         fmt = self._turbo_format_var.get() if hasattr(self, "_turbo_format_var") else "COMPLET"
@@ -148,6 +161,11 @@ class TurboMixin:
                            it["_status_lbl"].configure(text=lbl, text_color=WARN))
             return _cb
 
+        def _fail(item, label_full, label_short):
+            item["status"] = f"❌ {label_full}"
+            self.after(0, lambda i=item, m=label_short: i["_status_lbl"] and
+                       i["_status_lbl"].configure(text=f"❌ {m}", text_color=DANGER))
+
         def worker():
             done = 0
             for item in pending:
@@ -155,14 +173,54 @@ class TurboMixin:
                     break
                 audio = item["audio"]
                 image = item.get("image") or self._turbo_image
+
+                if not audio or not Path(audio).exists():
+                    _fail(item, "Audio manquant", "Audio manquant")
+                    continue
                 if not image or not Path(image).exists():
-                    self.after(0, lambda i=item: i["_status_lbl"] and
-                               i["_status_lbl"].configure(text="❌ Manquante", text_color=DANGER))
-                    item["status"] = "❌ Image manquante"
+                    _fail(item, "Pochette manquante", "Manquante")
                     continue
 
                 title  = item["title_var"].get().strip()  or Path(audio).stem
                 artist = item["artist_var"].get().strip()
+
+                if mode == "v2":
+                    stem = safe_name(Path(audio).stem)
+                    target_dir = Path(audio).resolve().parent
+                    final_output = self._turbo_v2_unique_output_path(target_dir, stem)
+                    if len(str(final_output)) > self.WINDOWS_MAX_PATH:
+                        _fail(item, "Chemin trop long", "Chemin trop long")
+                        continue
+
+                    tmp_dir = Path(tempfile.mkdtemp(prefix="tac_turbo_v2_"))
+                    tmp_output = tmp_dir / "render.mp4"
+
+                    self.after(0, lambda i=item: i["_status_lbl"] and
+                               i["_status_lbl"].configure(text="0%", text_color=WARN))
+                    try:
+                        settings = self._turbo_build_settings(
+                            preset=preset, audio=audio, image=image, output=str(tmp_output),
+                            title=title, artist=artist, is_short=is_short,
+                            is_vertical=is_vertical)
+                        render_video(settings, progress_callback=_make_progress_cb(item))
+                        final_output.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.move(str(tmp_output), str(final_output))
+                        self._turbo_v2_mark_done(audio, image, str(final_output))
+                        done += 1
+                        item["status"] = "✅ OK"
+                        item["_v2_output"] = str(final_output)
+                        out_dir = str(final_output.parent)
+                        self.after(0, lambda i=item, d=out_dir: self._turbo_on_item_done(i, d))
+                        self.after(0, lambda n=done: self._set_status(
+                            f"⚡ Turbo V2 — {n}/{len(pending)}", WARN))
+                    except Exception as exc:
+                        msg = str(exc)[:30]
+                        _fail(item, msg, msg)
+                    finally:
+                        shutil.rmtree(tmp_dir, ignore_errors=True)
+                    continue
+
+                # ── Mode v1 (interface originale) ────────────────────────────
                 safe   = safe_name((f"{artist} - {title}") if artist else title)
                 proj_dir = Path(self.project_root) / "Turbo" / safe
                 proj_dir.mkdir(parents=True, exist_ok=True)
@@ -184,10 +242,8 @@ class TurboMixin:
                     self.after(0, lambda n=done: self._set_status(
                         f"⚡ Turbo — {n}/{len(pending)}", WARN))
                 except Exception as exc:
-                    item["status"] = "❌ Erreur"
                     msg = str(exc)[:30]
-                    self.after(0, lambda i=item, m=msg: i["_status_lbl"] and
-                               i["_status_lbl"].configure(text=f"❌ {m}", text_color=DANGER))
+                    _fail(item, msg, msg)
 
             self.is_rendering = False
             self.after(0, lambda n=done: self._set_status(
@@ -233,7 +289,7 @@ class TurboMixin:
                     except Exception:
                         pass
 
-    def _turbo_preview(self):
+    def _turbo_preview(self, item: dict | None = None):
         from app.ui.app import ACCENT, SURF3, TEXT, MUTED, FONT_H2, FONT_MU, _btn
         if self.is_rendering:
             messagebox.showwarning("Aperçu", "Un rendu est déjà en cours.")
@@ -242,11 +298,11 @@ class TurboMixin:
             messagebox.showwarning("Aperçu", "Ajoutez au moins un fichier audio.")
             return
 
-        first = self._turbo_queue[0]
+        first = item if item is not None else self._turbo_queue[0]
         audio = first["audio"]
         image = first.get("image") or self._turbo_image
         if not image or not Path(image).exists():
-            messagebox.showwarning("Aperçu", "Aucune pochette définie pour le premier fichier.")
+            messagebox.showwarning("Aperçu", "Aucune pochette définie pour ce fichier.")
             return
 
         preset_name = self._turbo_preset_var.get() if hasattr(self, "_turbo_preset_var") else ""

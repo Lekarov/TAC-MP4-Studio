@@ -285,6 +285,14 @@ FFmpeg doit être installé séparément sur la machine cible.
 
 ## Changelog
 
+### v1.10.0 — Turbo V2 + conversion Short depuis l'historique
+- **Turbo V2** : nouveau mode d'export en série à partir d'un dossier. Les musiques et pochettes de même nom de fichier sont appariées automatiquement (`Titre.mp3` + `Titre.png`), avec une image de fond commune optionnelle et un aperçu aléatoire.
+- Les vidéos Turbo V2 sont exportées directement dans le dossier source, nommées comme l'audio d'origine (pas de sous-dossier, pas de copie de la pochette) ; rendu écrit dans un dossier temporaire puis déplacé en une opération atomique pour ne jamais laisser de fichier partiel.
+- Historique persistant : les paires déjà rendues (empreinte taille + date de modif) sont mémorisées entre deux lancements de l'appli et ne sont pas ré-exportées ; un bouton 🔁 permet de rescanner le dossier.
+- Sécurités : vérification d'écriture du dossier, estimation d'espace disque libre, détection des noms ambigus (deux audios/images de même nom), anti-collision de nom de sortie, limite de longueur de chemin Windows.
+- Écran de choix au clic sur ⚡ TURBO : Interface originale ou Turbo V2.
+- Historique : bouton « 🎬 Convertir en Short » pour régénérer une création existante au format 1 min · 9:16 avec exactement les mêmes réglages visuels.
+
 ### v1.9.1 — Export en une passe + perf + maintenabilité
 - **Export vidéo en une seule passe** : les frames sont pipées directement vers FFmpeg (`stdin` rawvideo) au lieu de passer par un fichier temporaire `cv2.VideoWriter` (mp4v) ré-encodé ensuite. Plus rapide, et supprime une perte de qualité intermédiaire.
 - Erreurs FFmpeg lues depuis un fichier log dédié (au lieu d'un pipe stderr non lu, qui pouvait bloquer)
@@ -292,6 +300,7 @@ FFmpeg doit être installé séparément sur la machine cible.
 - `app/ui/app.py` découpé : extraction de `TurboMixin` (`turbo.py`) et `ExportMixin` (`export_ui.py`) — 2237 → ~1460 lignes
 - Exceptions silencieuses de `audio.py`/`exporter.py` désormais tracées (niveau debug) dans `tac.log`
 - Bornes de version ajoutées dans `requirements.txt`
+- **Correctif** : la preview restait noire (pochette et effets absents, seul le spectre s'affichait) — imports partagés (`PREVIEW_W`, `FPS`, `RenderSettings`...) supprimés par erreur lors du découpage de `app.py`, restaurés
 
 ### v1.9 — Bibliothèque de presets unifiée + export cards
 - Onglet ⚡ refactorisé : bibliothèque unifiée intégrés + perso dans une seule liste
