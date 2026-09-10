@@ -116,7 +116,7 @@ Les presets personnels sont sauvegardables, étoilables (★) et supprimables.
 ### Installation
 
 ```bash
-git clone https://github.com/DoktorP3st/TAC-MP4-Studio
+git clone https://github.com/Lekarov/TAC-MP4-Studio
 cd TAC-MP4-Studio
 pip install -r requirements.txt
 python main.py
@@ -342,6 +342,6 @@ FFmpeg doit être installé séparément sur la machine cible.
 
 <div align="center">
 
-Développé par **DoktorP3st** · 🎮 [twitch.tv/DoktorP3st](https://twitch.tv/DoktorP3st)
+Développé par **DoktorP3st**
 
 </div>
