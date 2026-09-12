@@ -19,6 +19,7 @@ env/
 # Logs & config locale
 *.log
 config.json
+.requirements.hash
 
 # Données utilisateur
 data/

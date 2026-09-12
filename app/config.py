@@ -34,6 +34,11 @@ def default_config() -> dict:
         "turbo_v2_last_folder": "",
         "user_presets": {},
         "hidden_builtin_presets": [],
+        "youtube_oauth_client_id": "",
+        "youtube_oauth_client_secret": "",
+        "youtube_profiles": {},
+        "youtube_history": {},
+        "youtube_last_scheduled_date": "",
         "settings": {
             "global_preset": "Dark Premium",
             "particle_preset": "Premium",

@@ -7,7 +7,7 @@
 Transforme n'importe quel fichier audio en vidéo visualisée frame par frame,  
 synchronisée beat par beat, exportée en qualité broadcast.
 
-![Version](https://img.shields.io/badge/version-1.9.1-7c3aed?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.11.0-7c3aed?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.8+-5C3EE8?style=flat-square&logo=opencv&logoColor=white)
 ![CustomTkinter](https://img.shields.io/badge/UI-CustomTkinter-1F6AA5?style=flat-square)
@@ -94,6 +94,60 @@ Les presets personnels sont sauvegardables, étoilables (★) et supprimables.
 
 ---
 
+## Publication YouTube
+
+Depuis l'accueil, bouton **📺 Publier sur YouTube** — trois entrées :
+
+| Entrée | Usage |
+|---|---|
+| 🎬 **Upload manuel** | Sélectionne un fichier vidéo précis à publier |
+| 📁 **Upload dossier** | Scanne un dossier ; seules les vidéos jamais publiées (anti-doublon nom + taille) sont proposées |
+| 📚 **Mes vidéos** | Parcourt playlists et vidéos déjà en ligne (filtrable par visibilité), édition titre/description/tags/visibilité, et réorganisation du planning |
+
+### Upload programmé
+- File d'attente éditable : titre (pré-rempli depuis le nom de fichier), tags, description (fenêtre dédiée), date de publication
+- **Dates automatiques J+1** : une date de départ est choisie, chaque vidéo suivante de la file prend +1 jour ; la session suivante repart du lendemain de la dernière vidéo réellement publiée (mémorisé dans la config)
+- **Profils** (👤) : nom + tags par défaut + description par défaut, réutilisables en un clic sur toute la file
+
+### Bibliothèque (📚 Mes vidéos)
+- Menu playlists à gauche (dont « Toutes les vidéos »), liste de vidéos à droite avec miniature, badge de statut (🌍 Publique · 🔗 Non répertoriée · 🔒 Privée · ⏰ Programmée + date), aperçu des tags
+- Filtre par statut de visibilité
+- Édition complète par vidéo (titre, tags, description, visibilité, date de programmation) écrite directement sur YouTube
+
+### 🔀 Réorganiser (diversifier)
+Ré-planifie toutes les vidéos privées programmées à venir pour éviter d'enchaîner plusieurs vidéos de la même playlist quand d'autres sont disponibles :
+1. Regroupe les vidéos programmées par playlist d'appartenance (les vidéos hors playlist forment un groupe « Sans playlist »)
+2. Calcule un nouvel ordre par algorithme glouton (type *Reorganize String*) — n'impose une répétition consécutive que si elle est mathématiquement inévitable (une playlist trop dominante)
+3. Réassigne les dates en conservant exactement le même pool de jours déjà programmés (aucune vidéo n'est avancée/retardée dans le temps) et l'heure d'origine de chaque vidéo
+4. Affiche un **aperçu** (ancienne date → nouvelle date, playlist, titre) avant tout envoi — rien n'est appliqué sans validation
+
+### Authentification
+OAuth2 Google via **Device Authorization Grant** (comme autoriser une app sur une smart TV) — pas de serveur web local requis. L'écran d'autorisation affiche un lien et un code copiables individuellement (📋). Le refresh token ne périme jamais ; toute réponse 401/403 de l'API (scope insuffisant, token révoqué) déclenche automatiquement une proposition de ré-autorisation.
+
+**⚠️ Aucun identifiant n'est fourni avec ce dépôt** — chacun doit créer son propre client OAuth Google (gratuit, ~5 minutes) :
+
+<details>
+<summary><b>Créer ses identifiants OAuth YouTube (étapes)</b></summary>
+
+1. Aller sur [console.cloud.google.com](https://console.cloud.google.com/), créer un nouveau projet
+2. **APIs et services → Bibliothèque** → chercher *YouTube Data API v3* → l'activer
+3. **APIs et services → Écran de consentement OAuth** → type *Externe* → renseigner un nom d'app, se rajouter soi-même comme *utilisateur test* (pas besoin de publier l'app)
+4. **APIs et services → Identifiants → Créer des identifiants → ID client OAuth**
+   - Type d'application : **TV et appareils à entrée limitée** (indispensable pour le Device Flow utilisé ici — pas "Application de bureau")
+5. Récupérer le **ID client** et le **code secret du client** affichés
+6. Lancer TAC MP4 Studio une première fois pour qu'il crée `%APPDATA%\DoktorP3st\TAC_MP4\config.json`, puis y ajouter ces deux clés :
+   ```json
+   "youtube_oauth_client_id": "VOTRE_ID_CLIENT.apps.googleusercontent.com",
+   "youtube_oauth_client_secret": "VOTRE_CODE_SECRET"
+   ```
+7. Dans l'app : **📺 Publier sur YouTube → Autoriser** → ouvrir le lien affiché, entrer le code, valider avec son compte Google
+
+**Ne jamais commiter ni partager `config.json`** (déjà exclu par `.gitignore`) ni le fichier `youtube_token.json` du même dossier — ce sont vos identifiants et jeton d'accès personnels.
+
+</details>
+
+---
+
 ## Démarrage rapide
 
 ### Prérequis
@@ -127,6 +181,8 @@ Ou via le lanceur Windows :
 ```
 double-clic sur TAC.bat
 ```
+
+`TAC.bat` ne réinstalle les dépendances que si `requirements.txt` a changé depuis le dernier lancement (hash SHA256 comparé à `.requirements.hash`) — pas de `pip install` inutile à chaque démarrage.
 
 ---
 
@@ -187,6 +243,9 @@ TAC-MP4-Studio/
     ├── renderer.py            Rendu frame — image · texte · fond · vignette · glow
     ├── spectrum.py            10 styles de spectre + orbe audio
     ├── vinyl.py               Disque vinyle rotatif + pochette
+    ├── youtube_auth.py        OAuth2 Google — Device Authorization Grant
+    ├── youtube_api.py         Lecture/édition playlists + vidéos (API Data v3, HTTP brut)
+    ├── youtube_upload.py      Upload résumable de vidéos (API Data v3, HTTP brut)
     │
     └── ui/
         ├── app.py             App — état · lifecycle · navigation · construction éditeur
@@ -195,6 +254,7 @@ TAC-MP4-Studio/
         ├── pages.py           PagesMixin — accueil · historique · turbo
         ├── preview.py         PreviewMixin — preview live · waveform · audio
         ├── turbo.py           TurboMixin — export par lot (mode Turbo)
+        ├── youtube_ui.py      YoutubeMixin — upload programmé · bibliothèque · réorganisation
         └── widgets.py         Widgets réutilisables
 ```
 
@@ -229,6 +289,8 @@ Chaque composant utilise des exceptions métier typées. Les messages utilisateu
 | `PreviewError` | Crash preview · widget détruit · callback tardif |
 | `RenderError` | Dimensions invalides · erreur OpenCV frame |
 | `PresetError` | Preset invalide ou incomplet |
+| `YoutubeError` | Échec API YouTube (upload, lecture/édition playlists ou vidéos) |
+| `YoutubeAuthError` | Réponse 401/403 — jeton absent, expiré ou scope OAuth insuffisant (déclenche une proposition de ré-autorisation) |
 
 ---
 
@@ -245,6 +307,14 @@ Dossier de sortie par défaut (modifiable dans l'app) :
 ```
 %APPDATA%\DoktorP3st\TAC_MP4\Creations\
 ```
+
+Jeton OAuth YouTube (Device Authorization Grant, ne périme jamais) :
+
+```
+%APPDATA%\DoktorP3st\TAC_MP4\youtube_token.json
+```
+
+Identifiants du client OAuth (`youtube_oauth_client_id` / `youtube_oauth_client_secret`), historique d'upload anti-doublon (`youtube_history`), profils (`youtube_profiles`) et dernière date programmée (`youtube_last_scheduled_date`) sont stockés dans le `config.json` ci-dessus.
 
 ---
 
@@ -279,11 +349,19 @@ FFmpeg doit être installé séparément sur la machine cible.
 | `scipy` | Resampling audio · interpolation |
 | `customtkinter` | Interface dark theme moderne |
 | `tkinterdnd2` | Drag & drop fichiers (optionnel) |
+| `requests` | Appels API YouTube (OAuth, upload résumable, lecture/édition) |
 | `FFmpeg` | Encodage MP4 (NVENC / libx264) |
 
 ---
 
 ## Changelog
+
+### v1.11.0 — Publication YouTube (upload, bibliothèque, réorganisation)
+- **Upload programmé** vers YouTube depuis l'accueil : upload manuel (fichier) ou upload dossier (scan + anti-doublon nom+taille), file d'attente éditable (titre · tags · description · date), dates automatiques J+1, profils réutilisables (tags + description par défaut)
+- **Bibliothèque (📚 Mes vidéos)** : parcours des playlists et vidéos déjà en ligne, filtre par visibilité (publique · non répertoriée · privée · programmée), édition complète (titre/description/tags/visibilité/date) écrite directement sur YouTube
+- **🔀 Réorganiser (diversifier)** : ré-planifie les vidéos privées programmées à venir pour éviter d'enchaîner plusieurs vidéos de la même playlist (algorithme glouton type *Reorganize String*), sans changer le pool de dates déjà utilisées ; aperçu obligatoire avant application
+- Authentification OAuth2 Google par **Device Authorization Grant** (lien + code copiables individuellement), scope complet `youtube`, ré-autorisation automatique proposée sur toute réponse 401/403
+- `TAC.bat` : mise à jour des dépendances (`pip install`) uniquement si `requirements.txt` a changé (hash SHA256), plus de réinstallation à chaque lancement
 
 ### v1.10.0 — Turbo V2 + conversion Short depuis l'historique
 - **Turbo V2** : nouveau mode d'export en série à partir d'un dossier. Les musiques et pochettes de même nom de fichier sont appariées automatiquement (`Titre.mp3` + `Titre.png`), avec une image de fond commune optionnelle et un aperçu aléatoire.

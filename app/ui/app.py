@@ -44,6 +44,7 @@ from app.ui.pages import PagesMixin
 from app.ui.turbo import TurboMixin
 from app.ui.turbo_v2 import TurboV2Mixin
 from app.ui.export_ui import ExportMixin
+from app.ui.youtube_ui import YoutubeMixin
 
 _log = get_logger("ui")
 
@@ -55,7 +56,7 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 # ── Version ───────────────────────────────────────────────────────────────────
-VERSION = "1.10.0"  # v1.10.0 — Turbo V2 (dossier auto-apparié) + conversion Short depuis l'historique
+VERSION = "1.11.0"  # v1.11.0 — Publication YouTube (upload, bibliothèque, réorganisation)
 
 BG      = "#0a0a0a"
 SURF    = "#111111"
@@ -156,6 +157,7 @@ class _Tooltip:
 
 
 class App(PagesMixin, EditorMixin, PreviewMixin, TurboMixin, TurboV2Mixin, ExportMixin,
+          YoutubeMixin,
           ctk.CTk if not _DND_AVAILABLE else TkinterDnD.Tk):
 
     def __init__(self) -> None:
@@ -193,6 +195,13 @@ class App(PagesMixin, EditorMixin, PreviewMixin, TurboMixin, TurboV2Mixin, Expor
         if not isinstance(self.turbo_v2_history, dict):
             self.turbo_v2_history = {}
         self._turbo_v2_last_folder: str = self.config_data.get("turbo_v2_last_folder", "")
+
+        # YouTube
+        self.youtube_profiles: dict = self.config_data.get("youtube_profiles", {})
+        self.youtube_history: dict = self.config_data.get("youtube_history", {})
+        self.youtube_last_scheduled_date: str = self.config_data.get("youtube_last_scheduled_date", "")
+        self._youtube_active_profile: str = next(iter(self.youtube_profiles), "")
+        self._youtube_queue: list[dict] = []
 
         # ── Tkinter vars ───────────────────────────────────────────────────────
         self.title_text       = tk.StringVar(value=settings.get("title_text", ""))
@@ -1276,6 +1285,9 @@ class App(PagesMixin, EditorMixin, PreviewMixin, TurboMixin, TurboV2Mixin, Expor
         self.config_data["history"]      = self.history
         self.config_data["turbo_v2_history"] = self.turbo_v2_history
         self.config_data["turbo_v2_last_folder"] = getattr(self, "_turbo_v2_last_folder", "")
+        self.config_data["youtube_profiles"] = self.youtube_profiles
+        self.config_data["youtube_history"] = self.youtube_history
+        self.config_data["youtube_last_scheduled_date"] = self.youtube_last_scheduled_date
         self.config_data["settings"] = {
             "title_text":       self.title_text.get(),
             "artist_text":      self.artist_text.get(),

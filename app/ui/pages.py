@@ -188,6 +188,14 @@ class PagesMixin:
                       text_color="#f59e0b",
                       border_color="#2a2000", border_width=1,
                       font=FONT_SM, corner_radius=8,
+                      height=40, width=340).pack(pady=(0, 6))
+        ctk.CTkButton(inner, text="📺 Publier sur YouTube",
+                      command=self.show_youtube_choice,
+                      fg_color="transparent",
+                      hover_color="#161616",
+                      text_color="#ef4444",
+                      border_color="#2a0000", border_width=1,
+                      font=FONT_SM, corner_radius=8,
                       height=40, width=340).pack()
 
         ctk.CTkFrame(inner, height=1, fg_color="#1e1e1e", corner_radius=0).pack(
