@@ -274,7 +274,19 @@ class YoutubeMixin:
                      placeholder_text="AAAA-MM-JJ", fg_color=SURF3, border_color=BORDER,
                      text_color=TEXT, font=FONT_SM, width=110).pack(side="left", padx=(0, 6))
         _btn(ci, "Appliquer J+1", self._youtube_apply_dates,
-             small=True, width=120, height=28).pack(side="left")
+             small=True, width=120, height=28).pack(side="left", padx=(0, 20))
+
+        self._youtube_sync_btn = _btn(ci, "🔄 Synchro YouTube", self._youtube_sync_last_date,
+                                      small=True, width=170, height=28,
+                                      fg_color="#0f3460", hover_color="#144272")
+        self._youtube_sync_btn.pack(side="left")
+        try:
+            from app.ui.app import _Tooltip
+            _Tooltip(self._youtube_sync_btn,
+                     "Va chercher sur YouTube la date de ta dernière vidéo\n"
+                     "déjà programmée, et règle le départ sur le lendemain.")
+        except Exception:
+            pass
 
         # ── Liste des vidéos ─────────────────────────────────────────────────
         hdr = ctk.CTkFrame(outer, fg_color=SURF3, corner_radius=6)
@@ -404,6 +416,78 @@ class YoutubeMixin:
         for idx, item in enumerate(self._youtube_queue):
             d = base + timedelta(days=idx)
             item["date_var"].set(d.strftime(DATE_FMT))
+
+    def _youtube_sync_last_date(self):
+        """Va chercher sur YouTube la date de la dernière vidéo encore programmée
+        (privée + date future) et règle la date de départ sur le lendemain —
+        évite de devoir retourner vérifier sur YouTube à la main."""
+        if not self._youtube_authorized():
+            messagebox.showwarning("YouTube", "Autorisez d'abord votre compte YouTube.")
+            self.show_youtube_auth()
+            return
+
+        self._youtube_sync_btn.configure(state="disabled", text="🔄 Recherche...")
+
+        def _reset_btn():
+            self._youtube_sync_btn.configure(state="normal", text="🔄 Synchro YouTube")
+
+        def worker():
+            from app import youtube_api
+            from app.errors import YoutubeAuthError, YoutubeError
+
+            token = self._youtube_lib_token()
+            if not token:
+                self.after(0, self._youtube_lib_auth_expired)
+                self.after(0, _reset_btn)
+                return
+            try:
+                uploads_id = youtube_api.get_uploads_playlist_id(token)
+                ids = youtube_api.list_playlist_video_ids(token, uploads_id)
+                videos = youtube_api.get_videos_details(token, ids) if ids else []
+            except YoutubeAuthError:
+                self.after(0, self._youtube_lib_auth_expired)
+                self.after(0, _reset_btn)
+                return
+            except YoutubeError as exc:
+                self.after(0, lambda e=exc: messagebox.showerror("Synchro YouTube", _format_youtube_error(e)))
+                self.after(0, _reset_btn)
+                return
+
+            now = datetime.now(timezone.utc)
+            future_dates = []
+            for v in videos:
+                if v["privacy_status"] != "private" or not v.get("publish_at"):
+                    continue
+                try:
+                    dt = _parse_publish_at(v["publish_at"])
+                except ValueError:
+                    continue
+                if dt > now:
+                    future_dates.append(dt)
+
+            if not future_dates:
+                self.after(0, lambda: messagebox.showinfo(
+                    "Synchro YouTube",
+                    "Aucune vidéo programmée à venir trouvée sur la chaîne.\n"
+                    "La date de départ n'a pas été modifiée."))
+                self.after(0, _reset_btn)
+                return
+
+            last = max(future_dates).date()
+            next_date = max(last + timedelta(days=1), datetime.now().date())
+
+            def _apply():
+                self._youtube_start_date_var.set(next_date.strftime(DATE_FMT))
+                self._youtube_apply_dates()
+                messagebox.showinfo(
+                    "Synchro YouTube",
+                    f"Dernière vidéo programmée trouvée : {last.strftime(DATE_FMT)}.\n"
+                    f"Date de départ mise à jour : {next_date.strftime(DATE_FMT)}.")
+
+            self.after(0, _apply)
+            self.after(0, _reset_btn)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     # ══════════════════════════════════════════════════════════════════════════
     # UPLOAD

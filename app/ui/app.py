@@ -7,6 +7,7 @@ Nouveautés :
 """
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import threading
@@ -56,7 +57,7 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 # ── Version ───────────────────────────────────────────────────────────────────
-VERSION = "1.11.0"  # v1.11.0 — Publication YouTube (upload, bibliothèque, réorganisation)
+VERSION = "1.12.0"  # v1.12.0 — Synchro YouTube, historique de publication, gestion des données
 
 BG      = "#0a0a0a"
 SURF    = "#111111"
@@ -106,6 +107,14 @@ def _card(parent, **kw):
 def _sep(parent):
     ctk.CTkFrame(parent, height=1, fg_color=BORDER, corner_radius=0).pack(
         fill="x", padx=12, pady=(8, 0))
+
+
+def _format_size(n: float) -> str:
+    for unit in ("o", "Ko", "Mo", "Go"):
+        if n < 1024:
+            return f"{n:.0f} {unit}" if unit == "o" else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} To"
 
 
 # ── Tooltip simple ───────────────────────────────────────────────────────────
@@ -1096,6 +1105,45 @@ class App(PagesMixin, EditorMixin, PreviewMixin, TurboMixin, TurboV2Mixin, Expor
         ctk.CTkFrame(scroll, height=1, fg_color=BORDER, corner_radius=0).pack(
             fill="x", padx=28, pady=(18, 0))
 
+        # ── Données ───────────────────────────────────────────────────────────
+        ctk.CTkLabel(scroll, text="🗑  Données", text_color=ACCLT,
+                     font=FONT_SEC).pack(anchor="w", padx=28, pady=(18, 4))
+        ctk.CTkLabel(scroll,
+                     text="Purge sélective — coche ce que tu veux effacer, rien "
+                          "n'est supprimé sans confirmation.",
+                     text_color=MUTED, font=FONT_MU, justify="left",
+                     anchor="w").pack(anchor="w", padx=28, pady=(0, 8))
+
+        purge_vars: dict[str, tk.BooleanVar] = {}
+        purge_options = [
+            ("history", "🎬 Historique de génération",
+             "Métadonnées des créations — les fichiers vidéo restent sur le disque."),
+            ("youtube_history", "📺 Historique de publication YouTube",
+             "Anti-doublon local — les vidéos restent en ligne sur YouTube."),
+            ("files", "💾 Fichiers vidéo générés (dossier Creations)",
+             "Supprime les fichiers eux-mêmes du disque — irréversible."),
+            ("logs", "📄 Journal de l'application (tac.log)",
+             "Fichier de diagnostic technique."),
+        ]
+        for key, label, desc in purge_options:
+            var = tk.BooleanVar(value=False)
+            purge_vars[key] = var
+            row = ctk.CTkFrame(scroll, fg_color=SURF2, corner_radius=8)
+            row.pack(fill="x", padx=28, pady=3)
+            ctk.CTkCheckBox(row, text=label, variable=var, text_color=TEXT, font=FONT_SM,
+                            fg_color=ACCENT, hover_color=ACCHOV, border_color=BORDER,
+                            checkbox_width=20, checkbox_height=20).pack(
+                anchor="w", padx=14, pady=(9, 0))
+            ctk.CTkLabel(row, text=desc, text_color=MUTED, font=FONT_MU,
+                         anchor="w").pack(anchor="w", padx=(38, 14), pady=(0, 9))
+
+        _btn(scroll, "🗑  Purger la sélection",
+             lambda: self._confirm_purge_data(purge_vars),
+             danger=True, height=38).pack(fill="x", padx=28, pady=(4, 0))
+
+        ctk.CTkFrame(scroll, height=1, fg_color=BORDER, corner_radius=0).pack(
+            fill="x", padx=28, pady=(18, 0))
+
         # ── À propos ──────────────────────────────────────────────────────────
         ctk.CTkLabel(scroll, text="À propos", text_color=ACCLT,
                      font=FONT_SEC).pack(anchor="w", padx=28, pady=(18, 6))
@@ -1109,6 +1157,85 @@ class App(PagesMixin, EditorMixin, PreviewMixin, TurboMixin, TurboV2Mixin, Expor
 
         # Fermer
         _btn(scroll, "Fermer", win.destroy, width=130, height=36, small=True).pack(pady=(4, 24))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # DONNÉES — purge sélective
+    # ══════════════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _data_folder_size(path) -> int:
+        total = 0
+        for root, _dirs, files in os.walk(path):
+            for f in files:
+                try:
+                    total += os.path.getsize(os.path.join(root, f))
+                except OSError:
+                    pass
+        return total
+
+    def _confirm_purge_data(self, purge_vars: dict) -> None:
+        selected = [k for k, v in purge_vars.items() if v.get()]
+        if not selected:
+            messagebox.showinfo("Données", "Coche au moins une option à purger.")
+            return
+
+        labels = {
+            "history":         "Historique de génération",
+            "youtube_history": "Historique de publication YouTube",
+            "files":           "Fichiers vidéo générés (dossier Creations)",
+            "logs":            "Journal de l'application",
+        }
+        consequences = {
+            "history":         "les créations disparaissent de l'Historique (fichiers conservés)",
+            "youtube_history": "un futur \"upload dossier\" pourrait republier un fichier déjà envoyé",
+            "files":           "les fichiers vidéo sont supprimés du disque, définitivement",
+            "logs":            "les traces de diagnostic récentes sont perdues",
+        }
+        lines = [f"• {labels[k]} — {consequences[k]}" for k in selected]
+
+        size_note = ""
+        if "files" in selected:
+            size = self._data_folder_size(self.project_root)
+            size_note = f"\n\n💾 Espace concerné : {_format_size(size)}"
+
+        if not messagebox.askyesno(
+            "⚠ Confirmer la purge",
+            "Tu es sur le point d'effacer :\n\n" + "\n".join(lines) + size_note +
+            "\n\n⚠ Action irréversible. Confirmer ?",
+            icon="warning",
+        ):
+            return
+
+        done = []
+        if "history" in selected:
+            self.history.clear()
+            done.append("historique de génération")
+        if "youtube_history" in selected:
+            self.youtube_history.clear()
+            done.append("historique YouTube")
+        if "files" in selected:
+            self._purge_generated_files()
+            done.append("fichiers vidéo")
+        if "logs" in selected:
+            from app.logger import purge_logs
+            purge_logs()
+            done.append("journal")
+
+        self._persist_now()
+        messagebox.showinfo("Données", "Purgé : " + ", ".join(done) + ".")
+
+    def _purge_generated_files(self) -> None:
+        root = Path(self.project_root)
+        if not root.exists():
+            return
+        for child in root.iterdir():
+            try:
+                if child.is_dir():
+                    shutil.rmtree(child, ignore_errors=True)
+                else:
+                    child.unlink()
+            except OSError:
+                pass
 
     def _capture_hd_frame(self):
         """Rend une frame unique en résolution réelle (1920×1080 ou 1080×1920)

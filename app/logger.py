@@ -38,6 +38,25 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(f"tac.{name}")
 
 
+def purge_logs() -> None:
+    """Vide le journal courant et supprime les fichiers de rotation.
+    Vide le fichier au lieu de le supprimer — le handler le garde ouvert,
+    et Windows verrouille les fichiers ouverts (échec si on tente unlink())."""
+    for h in list(_root.handlers):
+        if isinstance(h, RotatingFileHandler):
+            h.acquire()
+            try:
+                h.stream.close()
+                h.stream = open(_LOG_FILE, "w", encoding="utf-8")
+            finally:
+                h.release()
+    for backup in _LOG_DIR.glob("tac.log.*"):
+        try:
+            backup.unlink()
+        except OSError:
+            pass
+
+
 def log_exception(exc: Exception, context: str = "") -> None:
     logger = get_logger("exception")
     user_msg = exc.message if isinstance(exc, TACError) else str(exc)

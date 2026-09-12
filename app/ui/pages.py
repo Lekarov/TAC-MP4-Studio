@@ -260,15 +260,14 @@ class PagesMixin:
     # PAGE HISTORIQUE
     # ══════════════════════════════════════════════════════════════════════════
 
-    def show_history(self):
+    def show_history(self, mode: str | None = None):
         import customtkinter as ctk
-        from pathlib import Path
-        from PIL import Image
-        from app.exporter import open_file
-        from app.ui.app import (
-            BG, SURF3, BORDER, ACCENT, ACCLT, TEXT, MUTED, SUCCESS, WARN, DANGER,
-            FONT_H1, FONT_H2, FONT_SEC, FONT_SM, FONT_MU, _btn, _card,
-        )
+        from app.ui.app import BG, SURF2, SURF3, BORDER, ACCENT, ACCLT, TEXT, MUTED, FONT_H1, FONT_SM, _btn
+
+        if mode is not None:
+            self._history_view_mode = mode
+        mode = getattr(self, "_history_view_mode", "gen")
+
         self._clear_main()
         self._set_status("Historique")
         _cover = ctk.CTkFrame(self.main, fg_color=BG)
@@ -278,11 +277,50 @@ class PagesMixin:
         outer.pack(fill="both", expand=True, padx=32, pady=24)
 
         top = ctk.CTkFrame(outer, fg_color="transparent")
-        top.pack(fill="x", pady=(0, 16))
+        top.pack(fill="x", pady=(0, 12))
         ctk.CTkLabel(top, text="Historique", font=FONT_H1, text_color=TEXT).pack(side="left")
         _btn(top, "← Accueil", self.show_home, small=True, width=120).pack(side="right")
-        _btn(top, "🗑  Vider l'historique", self._clear_all_history,
-             small=True, width=160, danger=True).pack(side="right", padx=(0, 8))
+        if mode == "gen":
+            _btn(top, "🗑  Vider l'historique", self._clear_all_history,
+                 small=True, width=160, danger=True).pack(side="right", padx=(0, 8))
+        else:
+            _btn(top, "🗑  Vider l'historique", self._clear_all_youtube_history,
+                 small=True, width=160, danger=True).pack(side="right", padx=(0, 8))
+
+        tabs_row = ctk.CTkFrame(outer, fg_color="transparent")
+        tabs_row.pack(fill="x", pady=(0, 16))
+
+        def _tab_btn(text, key):
+            active = mode == key
+            return ctk.CTkButton(
+                tabs_row, text=text, command=lambda: self.show_history(key),
+                fg_color=ACCENT if active else SURF2,
+                hover_color=ACCENT if active else SURF3,
+                text_color=TEXT, font=FONT_SM, corner_radius=8,
+                height=32, width=200)
+
+        _tab_btn("🎬 Génération", "gen").pack(side="left", padx=(0, 8))
+        _tab_btn("📺 Publication YouTube", "youtube").pack(side="left")
+
+        self.main.update_idletasks()
+        try:
+            _cover.destroy()
+        except Exception:
+            pass
+
+        if mode == "youtube":
+            self._render_history_youtube(outer)
+        else:
+            self._render_history_generation(outer)
+
+    def _render_history_generation(self, outer):
+        import customtkinter as ctk
+        from pathlib import Path
+        from PIL import Image
+        from app.exporter import open_file
+        from app.ui.app import (
+            SURF3, ACCENT, ACCLT, TEXT, MUTED, SUCCESS, FONT_H2, FONT_SEC, FONT_SM, FONT_MU, _btn, _card,
+        )
 
         items = self._sorted_history()
         if not items:
@@ -294,12 +332,6 @@ class PagesMixin:
                                         scrollbar_button_color=SURF3,
                                         scrollbar_button_hover_color=ACCENT)
         scroll.pack(fill="both", expand=True)
-
-        self.main.update_idletasks()
-        try:
-            _cover.destroy()
-        except Exception:
-            pass
 
         for item in items:
             card = _card(scroll)
@@ -387,6 +419,78 @@ class PagesMixin:
         if messagebox.askyesno("Historique",
                                f"Supprimer '{item.get('name')}' de l'historique ?\n(Fichiers conservés.)"):
             self.history = [h for h in self.history if h.get("folder") != item.get("folder")]
+            self._persist_now()
+            self.show_history()
+
+    # ── Historique de publication YouTube ────────────────────────────────────
+
+    def _render_history_youtube(self, outer):
+        import customtkinter as ctk
+        import webbrowser
+        from app.ui.app import SURF3, ACCENT, ACCLT, TEXT, MUTED, FONT_H2, FONT_SM, FONT_MU, _btn, _card
+
+        entries = sorted(self.youtube_history.items(),
+                         key=lambda kv: kv[1].get("uploaded_at", ""), reverse=True)
+        if not entries:
+            ctk.CTkLabel(outer, text="Aucune publication YouTube pour l'instant.",
+                         text_color=MUTED, font=FONT_SM).pack(pady=40)
+            return
+
+        scroll = ctk.CTkScrollableFrame(outer, fg_color="transparent",
+                                        scrollbar_button_color=SURF3,
+                                        scrollbar_button_hover_color=ACCENT)
+        scroll.pack(fill="both", expand=True)
+
+        for key, entry in entries:
+            card = _card(scroll)
+            card.pack(fill="x", pady=5, padx=2)
+            inner = ctk.CTkFrame(card, fg_color="transparent")
+            inner.pack(fill="x", padx=14, pady=10)
+
+            info = ctk.CTkFrame(inner, fg_color="transparent")
+            info.pack(side="left", fill="x", expand=True)
+            ctk.CTkLabel(info, text=entry.get("title") or key.split("|")[0],
+                         font=FONT_H2, text_color=TEXT, anchor="w").pack(anchor="w")
+            sub = f"Uploadée le {entry.get('uploaded_at', '?')}"
+            if entry.get("scheduled_date"):
+                sub += f"  ·  Programmée le {entry['scheduled_date']}"
+            ctk.CTkLabel(info, text=sub, text_color=MUTED, font=FONT_MU,
+                         anchor="w").pack(anchor="w", pady=(2, 0))
+
+            btns = ctk.CTkFrame(inner, fg_color="transparent")
+            btns.pack(side="right")
+            vid_id = entry.get("youtube_id", "")
+            if vid_id:
+                _btn(btns, "▶ Ouvrir sur YouTube",
+                     lambda v=vid_id: webbrowser.open(f"https://youtu.be/{v}"),
+                     small=True, width=170, height=28).pack(side="left", padx=(0, 6))
+            _btn(btns, "✕ Supprimer", lambda k=key: self._delete_youtube_history_item(k),
+                 small=True, width=100, height=28, danger=True).pack(side="left")
+
+    def _clear_all_youtube_history(self):
+        if not self.youtube_history:
+            return
+        n = len(self.youtube_history)
+        if messagebox.askyesno(
+            "Vider l'historique YouTube",
+            f"Supprimer les {n} entrée(s) de l'historique de publication ?\n\n"
+            "⚠ Les vidéos restent en ligne sur YouTube — seule la protection "
+            "anti-doublon locale est effacée : un futur \"upload dossier\" "
+            "pourrait republier un fichier déjà envoyé.",
+            icon="warning",
+        ):
+            self.youtube_history.clear()
+            self._persist_now()
+            self.show_history()
+
+    def _delete_youtube_history_item(self, key: str):
+        if messagebox.askyesno(
+            "Historique YouTube",
+            "Supprimer cette entrée de l'historique de publication ?\n\n"
+            "⚠ La vidéo reste en ligne sur YouTube — seule la protection "
+            "anti-doublon locale est effacée pour ce fichier.",
+        ):
+            self.youtube_history.pop(key, None)
             self._persist_now()
             self.show_history()
 

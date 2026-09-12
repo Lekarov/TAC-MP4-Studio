@@ -7,7 +7,7 @@
 Transforme n'importe quel fichier audio en vidéo visualisée frame par frame,  
 synchronisée beat par beat, exportée en qualité broadcast.
 
-![Version](https://img.shields.io/badge/version-1.11.0-7c3aed?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.12.0-7c3aed?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.8+-5C3EE8?style=flat-square&logo=opencv&logoColor=white)
 ![CustomTkinter](https://img.shields.io/badge/UI-CustomTkinter-1F6AA5?style=flat-square)
@@ -107,6 +107,7 @@ Depuis l'accueil, bouton **📺 Publier sur YouTube** — trois entrées :
 ### Upload programmé
 - File d'attente éditable : titre (pré-rempli depuis le nom de fichier), tags, description (fenêtre dédiée), date de publication
 - **Dates automatiques J+1** : une date de départ est choisie, chaque vidéo suivante de la file prend +1 jour ; la session suivante repart du lendemain de la dernière vidéo réellement publiée (mémorisé dans la config)
+- **🔄 Synchro YouTube** : va chercher directement sur YouTube la date de la dernière vidéo encore programmée sur la chaîne et règle la date de départ sur le lendemain — évite de devoir vérifier manuellement sur YouTube avant de lancer une nouvelle file
 - **Profils** (👤) : nom + tags par défaut + description par défaut, réutilisables en un clic sur toute la file
 
 ### Bibliothèque (📚 Mes vidéos)
@@ -120,6 +121,9 @@ Ré-planifie toutes les vidéos privées programmées à venir pour éviter d'en
 2. Calcule un nouvel ordre par algorithme glouton (type *Reorganize String*) — n'impose une répétition consécutive que si elle est mathématiquement inévitable (une playlist trop dominante)
 3. Réassigne les dates en conservant exactement le même pool de jours déjà programmés (aucune vidéo n'est avancée/retardée dans le temps) et l'heure d'origine de chaque vidéo
 4. Affiche un **aperçu** (ancienne date → nouvelle date, playlist, titre) avant tout envoi — rien n'est appliqué sans validation
+
+### Historique
+La page Historique a deux onglets : **🎬 Génération** (créations locales, comportement existant) et **📺 Publication YouTube** (vidéos uploadées — date d'envoi, date programmée, lien direct « Ouvrir sur YouTube », suppression individuelle qui n'efface que la protection anti-doublon locale, jamais la vidéo en ligne).
 
 ### Authentification
 OAuth2 Google via **Device Authorization Grant** (comme autoriser une app sur une smart TV) — pas de serveur web local requis. L'écran d'autorisation affiche un lien et un code copiables individuellement (📋). Le refresh token ne périme jamais ; toute réponse 401/403 de l'API (scope insuffisant, token révoqué) déclenche automatiquement une proposition de ré-autorisation.
@@ -316,6 +320,16 @@ Jeton OAuth YouTube (Device Authorization Grant, ne périme jamais) :
 
 Identifiants du client OAuth (`youtube_oauth_client_id` / `youtube_oauth_client_secret`), historique d'upload anti-doublon (`youtube_history`), profils (`youtube_profiles`) et dernière date programmée (`youtube_last_scheduled_date`) sont stockés dans le `config.json` ci-dessus.
 
+### Gestion des données (⚙ Réglages → 🗑 Données)
+Purge sélective à la carte, avec confirmation explicite des conséquences avant toute suppression :
+
+| Option | Effet |
+|---|---|
+| Historique de génération | Efface les métadonnées des créations — les fichiers vidéo restent sur le disque |
+| Historique de publication YouTube | Efface la protection anti-doublon locale — les vidéos restent en ligne sur YouTube |
+| Fichiers vidéo générés (dossier Creations) | Supprime les fichiers eux-mêmes du disque — **irréversible** |
+| Journal de l'application (`tac.log`) | Vide le fichier de diagnostic technique |
+
 ---
 
 ## Packaging .exe
@@ -355,6 +369,11 @@ FFmpeg doit être installé séparément sur la machine cible.
 ---
 
 ## Changelog
+
+### v1.12.0 — Synchro YouTube, historique de publication, gestion des données
+- **🔄 Synchro YouTube** dans la file de publication : récupère automatiquement la date de la dernière vidéo programmée sur la chaîne et règle la date de départ sur le lendemain, sans avoir à vérifier sur YouTube
+- **Historique de publication YouTube** : nouvel onglet dans la page Historique (à côté de l'historique de génération existant) — liste des vidéos uploadées avec dates, lien direct vers YouTube, suppression individuelle
+- **⚙ Réglages → 🗑 Données** : purge sélective (historique de génération, historique YouTube, fichiers vidéo générés, journal technique), avec confirmation explicite des conséquences de chaque suppression avant d'agir
 
 ### v1.11.0 — Publication YouTube (upload, bibliothèque, réorganisation)
 - **Upload programmé** vers YouTube depuis l'accueil : upload manuel (fichier) ou upload dossier (scan + anti-doublon nom+taille), file d'attente éditable (titre · tags · description · date), dates automatiques J+1, profils réutilisables (tags + description par défaut)
