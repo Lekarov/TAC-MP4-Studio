@@ -7,7 +7,7 @@
 Transforme n'importe quel fichier audio en vidéo visualisée frame par frame,  
 synchronisée beat par beat, exportée en qualité broadcast.
 
-![Version](https://img.shields.io/badge/version-1.13.0-7c3aed?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.13.1-7c3aed?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.8+-5C3EE8?style=flat-square&logo=opencv&logoColor=white)
 ![CustomTkinter](https://img.shields.io/badge/UI-CustomTkinter-1F6AA5?style=flat-square)
@@ -384,6 +384,10 @@ FFmpeg doit être installé séparément sur la machine cible.
 ---
 
 ## Changelog
+
+### v1.13.1 — Titre Turbo V2 toujours modifiable et utilisé comme nom de fichier
+- Le champ **Titre** en mode Turbo V2 reste modifiable même quand le preset désactive le texte à l'écran (auparavant grisé dans ce cas)
+- Le nom du fichier vidéo généré en Turbo V2 utilise désormais le **Titre** saisi plutôt que le nom du fichier audio d'origine — utile quand les noms de fichiers ne correspondent pas au titre voulu
 
 ### v1.13.0 — Chaînes multiples, préfixe/suffixe de titre, nettoyage des exports publiés
 - **📺 Chaînes multiples** : gestion de plusieurs comptes YouTube depuis la même app — jeton, historique anti-doublon et date J+1 séparés par chaîne, sélecteur visible sur upload/bibliothèque/historique, ajout d'une nouvelle chaîne en un clic

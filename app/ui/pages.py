@@ -793,13 +793,13 @@ class PagesMixin:
         _btn(row, "✕", _remove, small=True, width=34, height=28, danger=True).pack(
             side="right", padx=(0, 4))
 
-        # Appliquer l'état texte du preset sélectionné
+        # Appliquer l'état texte du preset sélectionné (le titre reste
+        # toujours modifiable : il sert aussi de nom de fichier de sortie)
         if hasattr(self, "_turbo_preset_var"):
             _preset = self.user_presets.get(self._turbo_preset_var.get(), {})
             if not bool(_preset.get("show_text", True)):
                 try:
                     artist_entry.configure(state="disabled")
-                    title_entry.configure(state="disabled")
                 except Exception:
                     pass
 

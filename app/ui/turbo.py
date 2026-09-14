@@ -185,7 +185,7 @@ class TurboMixin:
                 artist = item["artist_var"].get().strip()
 
                 if mode == "v2":
-                    stem = safe_name(Path(audio).stem)
+                    stem = safe_name(title)
                     target_dir = Path(audio).resolve().parent
                     expected_output = target_dir / f"{stem}.mp4"
 
@@ -297,15 +297,23 @@ class TurboMixin:
             except Exception:
                 pass
 
+        # Le titre reste toujours modifiable : au-delà du texte affiché à
+        # l'écran (désactivable via le preset), il sert aussi de nom de
+        # fichier de sortie en mode Turbo V2.
         entry_state = "normal" if show_text else "disabled"
         for item in self._turbo_queue:
-            for key in ("_artist_entry", "_title_entry"):
-                w = item.get(key)
-                if w:
-                    try:
-                        w.configure(state=entry_state)
-                    except Exception:
-                        pass
+            w = item.get("_artist_entry")
+            if w:
+                try:
+                    w.configure(state=entry_state)
+                except Exception:
+                    pass
+            title_w = item.get("_title_entry")
+            if title_w:
+                try:
+                    title_w.configure(state="normal")
+                except Exception:
+                    pass
 
     def _turbo_preview(self, item: dict | None = None):
         from app.ui.app import ACCENT, SURF3, TEXT, MUTED, FONT_H2, FONT_MU, _btn
