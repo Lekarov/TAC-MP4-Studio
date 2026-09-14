@@ -437,7 +437,10 @@ def draw_reactive_text(frame, title, rms, kick, text_x=0.50, text_y=0.70,
 
 
 def draw_music_linked_particles(frame, particles, high, kick, settings: RenderSettings):
-    preset = PARTICLE_PRESETS[settings.particle_preset]
+    # .get() plutôt qu'un accès direct : un nom de preset corrompu ou
+    # renommé (ex. config.json altéré) ne doit jamais faire planter l'export,
+    # juste retomber sur un rendu par défaut.
+    preset = PARTICLE_PRESETS.get(settings.particle_preset, PARTICLE_PRESETS["Premium"])
     if preset["count"] <= 0:
         particles.clear()
         return particles
@@ -464,7 +467,8 @@ def draw_music_linked_particles(frame, particles, high, kick, settings: RenderSe
 
 
 def draw_smoke(frame, smoke_blobs, bass, kick, settings: RenderSettings):
-    preset = SMOKE_PRESETS[settings.smoke_preset]
+    # Même filet de sécurité que draw_music_linked_particles() ci-dessus.
+    preset = SMOKE_PRESETS.get(settings.smoke_preset, SMOKE_PRESETS["Cinématique"])
     if preset["density"] <= 0:
         smoke_blobs.clear()
         return smoke_blobs

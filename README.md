@@ -7,7 +7,7 @@
 Transforme n'importe quel fichier audio en vidéo visualisée frame par frame,  
 synchronisée beat par beat, exportée en qualité broadcast.
 
-![Version](https://img.shields.io/badge/version-1.14.0-7c3aed?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.14.1-7c3aed?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.8+-5C3EE8?style=flat-square&logo=opencv&logoColor=white)
 ![CustomTkinter](https://img.shields.io/badge/UI-CustomTkinter-1F6AA5?style=flat-square)
@@ -405,6 +405,10 @@ FFmpeg doit être installé séparément sur la machine cible.
 ---
 
 ## Changelog
+
+### v1.14.1 — Export Turbo plus robuste, erreurs diagnosticables
+- **Fini les exports Turbo qui plantent silencieusement** : un preset (particules/fumée) introuvable ou corrompu ne fait plus échouer l'export — l'app retombe sur un réglage par défaut au lieu de s'arrêter
+- **Erreurs Turbo détaillées** : le message d'erreur affiché dans la file n'est plus tronqué à 30 caractères, et le détail technique complet est désormais enregistré dans le journal (`%APPDATA%\DoktorP3st\TAC_MP4\logs\tac.log`) pour un diagnostic rapide en cas de nouveau souci
 
 ### v1.14.0 — Import JSON de métadonnées YouTube, aperçu aléatoire fiable, bibliothèque plus rapide
 - **📥 Import JSON de métadonnées** (Upload dossier YouTube) : dépose un `.json` (titre/description/tags par ID = nom de fichier) dans le dossier de vidéos, il est détecté et appliqué automatiquement — correspondance souple (accents/casse/séparateurs ignorés), résumé des vidéos/ID non associés, et bouton **📤 Exporter modèle JSON** pour générer un squelette à remplir

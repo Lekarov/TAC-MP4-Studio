@@ -15,6 +15,7 @@ import customtkinter as ctk
 
 from app.config import safe_name
 from app.exporter import render_video, open_file
+from app.logger import log_exception
 from app.models import RenderSettings
 from app.presets import WIDTH, HEIGHT, SHORT_WIDTH, SHORT_HEIGHT
 
@@ -161,10 +162,27 @@ class TurboMixin:
                            it["_status_lbl"].configure(text=lbl, text_color=WARN))
             return _cb
 
-        def _fail(item, label_full, label_short):
+        def _fail(item, label_full, label_short, detail: str = ""):
             item["status"] = f"❌ {label_full}"
-            self.after(0, lambda i=item, m=label_short: i["_status_lbl"] and
-                       i["_status_lbl"].configure(text=f"❌ {m}", text_color=DANGER))
+
+            def _apply(i=item, m=label_short, d=detail):
+                lbl = i.get("_status_lbl")
+                if not lbl:
+                    return
+                lbl.configure(text=f"❌ {m}", text_color=DANGER)
+                if d:
+                    from app.ui.app import _Tooltip
+                    _Tooltip(lbl, d)
+
+            self.after(0, _apply)
+
+        def _exc_detail(exc: Exception) -> str:
+            """Message complet (cause métier + détail technique) pour le
+            survol du statut — le libellé affiché dans la file reste court,
+            mais rien n'est perdu pour comprendre l'échec."""
+            message = getattr(exc, "message", str(exc))
+            detail = getattr(exc, "detail", "")
+            return f"{message}\n\n{detail}" if detail else message
 
         def worker():
             done = 0
@@ -232,8 +250,9 @@ class TurboMixin:
                         self.after(0, lambda n=done: self._set_status(
                             f"⚡ Turbo V2 — {n}/{len(pending)}", WARN))
                     except Exception as exc:
-                        msg = str(exc)[:30]
-                        _fail(item, msg, msg)
+                        log_exception(exc, context="Turbo V2 export")
+                        msg = getattr(exc, "message", str(exc))
+                        _fail(item, msg[:60], msg[:30], detail=_exc_detail(exc))
                     finally:
                         shutil.rmtree(tmp_dir, ignore_errors=True)
                     continue
@@ -260,8 +279,9 @@ class TurboMixin:
                     self.after(0, lambda n=done: self._set_status(
                         f"⚡ Turbo — {n}/{len(pending)}", WARN))
                 except Exception as exc:
-                    msg = str(exc)[:30]
-                    _fail(item, msg, msg)
+                    log_exception(exc, context="Turbo export")
+                    msg = getattr(exc, "message", str(exc))
+                    _fail(item, msg[:60], msg[:30], detail=_exc_detail(exc))
 
             self.is_rendering = False
             self.after(0, lambda n=done: self._set_status(
