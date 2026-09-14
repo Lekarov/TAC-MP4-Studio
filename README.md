@@ -7,7 +7,7 @@
 Transforme n'importe quel fichier audio en vidéo visualisée frame par frame,  
 synchronisée beat par beat, exportée en qualité broadcast.
 
-![Version](https://img.shields.io/badge/version-1.12.0-7c3aed?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.13.0-7c3aed?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.8+-5C3EE8?style=flat-square&logo=opencv&logoColor=white)
 ![CustomTkinter](https://img.shields.io/badge/UI-CustomTkinter-1F6AA5?style=flat-square)
@@ -106,9 +106,17 @@ Depuis l'accueil, bouton **📺 Publier sur YouTube** — trois entrées :
 
 ### Upload programmé
 - File d'attente éditable : titre (pré-rempli depuis le nom de fichier), tags, description (fenêtre dédiée), date de publication
-- **Dates automatiques J+1** : une date de départ est choisie, chaque vidéo suivante de la file prend +1 jour ; la session suivante repart du lendemain de la dernière vidéo réellement publiée (mémorisé dans la config)
+- **Dates automatiques J+1** : une date de départ est choisie, chaque vidéo suivante de la file prend +1 jour ; la session suivante repart du lendemain de la dernière vidéo réellement publiée (mémorisé dans la config, par chaîne)
 - **🔄 Synchro YouTube** : va chercher directement sur YouTube la date de la dernière vidéo encore programmée sur la chaîne et règle la date de départ sur le lendemain — évite de devoir vérifier manuellement sur YouTube avant de lancer une nouvelle file
 - **Profils** (👤) : nom + tags par défaut + description par défaut, réutilisables en un clic sur toute la file
+- **Préfixe / Suffixe de titre** : deux listes réutilisables (⚙ Gérer) pour encadrer automatiquement le titre de chaque vidéo, ex. préfixe `El Cheshire` → titre publié `El Cheshire - NomDuFichier` ; combinables (préfixe + suffixe), « Appliquer à tous » reformate toute la file d'un coup
+
+### 📺 Chaînes multiples
+Plusieurs chaînes YouTube (comptes Google différents) peuvent être gérées depuis la même app :
+- Sélecteur **📺 Chaîne** visible sur l'upload, la bibliothèque et l'historique de publication
+- **➕ Nouvelle chaîne** : donne un nom, puis lance une autorisation Device Flow dédiée à ce compte Google
+- Chaque chaîne a son propre jeton d'autorisation, son propre historique anti-doublon et sa propre date de reprise J+1 — totalement indépendants d'une chaîne à l'autre
+- ⚠️ Si le compte Google de la nouvelle chaîne est différent du tien, il doit être ajouté comme *utilisateur test* dans le même projet Google Cloud (voir section Authentification ci-dessous) avant de pouvoir s'autoriser
 
 ### Bibliothèque (📚 Mes vidéos)
 - Menu playlists à gauche (dont « Toutes les vidéos »), liste de vidéos à droite avec miniature, badge de statut (🌍 Publique · 🔗 Non répertoriée · 🔒 Privée · ⏰ Programmée + date), aperçu des tags
@@ -123,10 +131,17 @@ Ré-planifie toutes les vidéos privées programmées à venir pour éviter d'en
 4. Affiche un **aperçu** (ancienne date → nouvelle date, playlist, titre) avant tout envoi — rien n'est appliqué sans validation
 
 ### Historique
-La page Historique a deux onglets : **🎬 Génération** (créations locales, comportement existant) et **📺 Publication YouTube** (vidéos uploadées — date d'envoi, date programmée, lien direct « Ouvrir sur YouTube », suppression individuelle qui n'efface que la protection anti-doublon locale, jamais la vidéo en ligne).
+La page Historique a deux onglets : **🎬 Génération** (créations locales) et **📺 Publication YouTube** (vidéos uploadées de la chaîne active — date d'envoi, date programmée, lien direct « Ouvrir sur YouTube », suppression individuelle qui n'efface que la protection anti-doublon locale, jamais la vidéo en ligne).
+
+**🧹 Nettoyer les publiés** (onglet Génération) : croise l'historique de génération avec l'historique de publication YouTube. Pour chaque création déjà publiée : supprime le fichier vidéo, supprime l'audio source (sauf s'il est encore utilisé par une variante Complet/Short sœur non publiée), et conserve à la place une vignette vidéo + une pochette compressées comme trace visuelle. L'entrée reste dans l'Historique (toutes les infos texte conservées), marquée « 📦 Publié · nettoyé ». Aperçu de l'espace libéré et confirmation explicite avant toute suppression.
 
 ### Authentification
 OAuth2 Google via **Device Authorization Grant** (comme autoriser une app sur une smart TV) — pas de serveur web local requis. L'écran d'autorisation affiche un lien et un code copiables individuellement (📋). Le refresh token ne périme jamais ; toute réponse 401/403 de l'API (scope insuffisant, token révoqué) déclenche automatiquement une proposition de ré-autorisation.
+
+**Plusieurs chaînes / comptes Google** : un seul client OAuth (un seul projet Google Cloud) suffit pour autoriser plusieurs chaînes — chaque chaîne obtient son propre jeton. Si un compte Google différent du tien doit s'autoriser (deuxième chaîne), et que le client OAuth est en mode *Test* (cas par défaut, voir étapes ci-dessous), il faut d'abord l'ajouter comme utilisateur test :
+1. [console.cloud.google.com/apis/credentials/consent](https://console.cloud.google.com/apis/credentials/consent) → sélectionner le projet contenant le client OAuth utilisé par l'app
+2. Onglet **Utilisateurs test** → **+ Add users** → ajouter l'adresse Gmail du compte de la chaîne à autoriser (jusqu'à 100 comptes en mode Test)
+3. Relancer l'autorisation dans l'app (**➕ Nouvelle chaîne**) — l'erreur `403 access_denied` disparaît une fois le compte ajouté
 
 **⚠️ Aucun identifiant n'est fourni avec ce dépôt** — chacun doit créer son propre client OAuth Google (gratuit, ~5 minutes) :
 
@@ -146,7 +161,7 @@ OAuth2 Google via **Device Authorization Grant** (comme autoriser une app sur un
    ```
 7. Dans l'app : **📺 Publier sur YouTube → Autoriser** → ouvrir le lien affiché, entrer le code, valider avec son compte Google
 
-**Ne jamais commiter ni partager `config.json`** (déjà exclu par `.gitignore`) ni le fichier `youtube_token.json` du même dossier — ce sont vos identifiants et jeton d'accès personnels.
+**Ne jamais commiter ni partager `config.json`** (déjà exclu par `.gitignore`) ni les fichiers `youtube_token_*.json` du même dossier — ce sont vos identifiants et jetons d'accès personnels.
 
 </details>
 
@@ -312,13 +327,13 @@ Dossier de sortie par défaut (modifiable dans l'app) :
 %APPDATA%\DoktorP3st\TAC_MP4\Creations\
 ```
 
-Jeton OAuth YouTube (Device Authorization Grant, ne périme jamais) :
+Jeton OAuth YouTube (Device Authorization Grant, ne périme jamais) — un fichier par chaîne :
 
 ```
-%APPDATA%\DoktorP3st\TAC_MP4\youtube_token.json
+%APPDATA%\DoktorP3st\TAC_MP4\youtube_token_<id_chaîne>.json
 ```
 
-Identifiants du client OAuth (`youtube_oauth_client_id` / `youtube_oauth_client_secret`), historique d'upload anti-doublon (`youtube_history`), profils (`youtube_profiles`) et dernière date programmée (`youtube_last_scheduled_date`) sont stockés dans le `config.json` ci-dessus.
+Identifiants du client OAuth (`youtube_oauth_client_id` / `youtube_oauth_client_secret`), chaînes avec leur historique d'upload anti-doublon et dernière date programmée par chaîne (`youtube_channels`), profils (`youtube_profiles`) et préfixes/suffixes de titre (`youtube_title_prefixes` / `youtube_title_suffixes`) sont stockés dans le `config.json` ci-dessus.
 
 ### Gestion des données (⚙ Réglages → 🗑 Données)
 Purge sélective à la carte, avec confirmation explicite des conséquences avant toute suppression :
@@ -369,6 +384,11 @@ FFmpeg doit être installé séparément sur la machine cible.
 ---
 
 ## Changelog
+
+### v1.13.0 — Chaînes multiples, préfixe/suffixe de titre, nettoyage des exports publiés
+- **📺 Chaînes multiples** : gestion de plusieurs comptes YouTube depuis la même app — jeton, historique anti-doublon et date J+1 séparés par chaîne, sélecteur visible sur upload/bibliothèque/historique, ajout d'une nouvelle chaîne en un clic
+- **Préfixe / Suffixe de titre** : listes réutilisables pour encadrer automatiquement le titre de chaque vidéo (ex. `El Cheshire - NomDuFichier`), applicables à toute la file en un clic
+- **🧹 Nettoyer les publiés** (Historique) : pour les créations déjà publiées sur YouTube, supprime vidéo + audio source et ne garde qu'une trace texte + vignette/pochette compressées — avec aperçu de l'espace libéré et confirmation avant suppression
 
 ### v1.12.0 — Synchro YouTube, historique de publication, gestion des données
 - **🔄 Synchro YouTube** dans la file de publication : récupère automatiquement la date de la dernière vidéo programmée sur la chaîne et règle la date de départ sur le lendemain, sans avoir à vérifier sur YouTube

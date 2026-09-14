@@ -7,6 +7,7 @@ ne périme jamais.
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Optional
 
 import requests
@@ -18,33 +19,39 @@ DEVICE_CODE_ENDPOINT = "https://oauth2.googleapis.com/device/code"
 TOKEN_ENDPOINT        = "https://oauth2.googleapis.com/token"
 SCOPE                 = "https://www.googleapis.com/auth/youtube"
 
-TOKEN_PATH = APP_DATA_DIR / "youtube_token.json"
+LEGACY_TOKEN_PATH = APP_DATA_DIR / "youtube_token.json"
 
 
-def _load_token() -> dict:
+def token_path(channel_id: str) -> Path:
+    return APP_DATA_DIR / f"youtube_token_{channel_id or 'default'}.json"
+
+
+def _load_token(channel_id: str) -> dict:
     import json
-    if TOKEN_PATH.exists():
+    path = token_path(channel_id)
+    if path.exists():
         try:
-            return json.loads(TOKEN_PATH.read_text(encoding="utf-8"))
+            return json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             return {}
     return {}
 
 
-def _save_token(data: dict) -> None:
+def _save_token(channel_id: str, data: dict) -> None:
     import json
-    tmp = TOKEN_PATH.with_suffix(".tmp")
+    path = token_path(channel_id)
+    tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(TOKEN_PATH)
+    tmp.replace(path)
 
 
-def has_refresh_token() -> bool:
-    return bool(_load_token().get("refresh_token"))
+def has_refresh_token(channel_id: str) -> bool:
+    return bool(_load_token(channel_id).get("refresh_token"))
 
 
-def forget_token() -> None:
+def forget_token(channel_id: str) -> None:
     try:
-        TOKEN_PATH.unlink(missing_ok=True)
+        token_path(channel_id).unlink(missing_ok=True)
     except Exception:
         pass
 
@@ -65,10 +72,10 @@ def start_device_flow(client_id: str) -> dict:
 
 
 def poll_for_token(client_id: str, client_secret: str, device_code: str,
-                    interval: int, expires_in: int) -> tuple[bool, str]:
+                    interval: int, expires_in: int, channel_id: str) -> tuple[bool, str]:
     """Poll bloquant — à appeler depuis un thread. Retourne (ok, message)."""
     deadline = time.time() + expires_in
-    token = _load_token()
+    token = _load_token(channel_id)
 
     while time.time() < deadline:
         time.sleep(max(5, interval))
@@ -88,7 +95,7 @@ def poll_for_token(client_id: str, client_secret: str, device_code: str,
                 token["refresh_token"] = data["refresh_token"]
             token["access_token"] = data.get("access_token")
             token["expires_at"] = time.time() + data.get("expires_in", 3600)
-            _save_token(token)
+            _save_token(channel_id, token)
             if not token.get("refresh_token"):
                 return False, (
                     "Token reçu sans refresh_token (déjà autorisé précédemment). "
@@ -115,8 +122,8 @@ def poll_for_token(client_id: str, client_secret: str, device_code: str,
     return False, "Délai dépassé — relance l'autorisation."
 
 
-def get_access_token(client_id: str, client_secret: str) -> Optional[str]:
-    token = _load_token()
+def get_access_token(client_id: str, client_secret: str, channel_id: str) -> Optional[str]:
+    token = _load_token(channel_id)
     if not token.get("refresh_token"):
         return None
     if token.get("access_token") and token.get("expires_at", 0) - time.time() > 120:
@@ -132,7 +139,7 @@ def get_access_token(client_id: str, client_secret: str) -> Optional[str]:
         data = resp.json()
         token["access_token"] = data["access_token"]
         token["expires_at"] = time.time() + data.get("expires_in", 3600)
-        _save_token(token)
+        _save_token(channel_id, token)
         return token["access_token"]
     except requests.RequestException:
         return None

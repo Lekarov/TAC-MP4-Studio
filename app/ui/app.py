@@ -57,7 +57,7 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 # ── Version ───────────────────────────────────────────────────────────────────
-VERSION = "1.12.0"  # v1.12.0 — Synchro YouTube, historique de publication, gestion des données
+VERSION = "1.13.0"  # v1.13.0 — Chaînes multiples, préfixe/suffixe de titre, nettoyage des exports publiés
 
 BG      = "#0a0a0a"
 SURF    = "#111111"
@@ -205,11 +205,16 @@ class App(PagesMixin, EditorMixin, PreviewMixin, TurboMixin, TurboV2Mixin, Expor
             self.turbo_v2_history = {}
         self._turbo_v2_last_folder: str = self.config_data.get("turbo_v2_last_folder", "")
 
-        # YouTube
+        # YouTube — multi-chaînes
         self.youtube_profiles: dict = self.config_data.get("youtube_profiles", {})
-        self.youtube_history: dict = self.config_data.get("youtube_history", {})
-        self.youtube_last_scheduled_date: str = self.config_data.get("youtube_last_scheduled_date", "")
+        self.youtube_channels: dict = self.config_data.get("youtube_channels", {})
+        self.youtube_active_channel: str = self.config_data.get("youtube_active_channel", "")
+        self._migrate_legacy_youtube_channel()
         self._youtube_active_profile: str = next(iter(self.youtube_profiles), "")
+        self.youtube_title_prefixes: list = self.config_data.get("youtube_title_prefixes", [])
+        self._youtube_active_title_prefix: str = self.config_data.get("youtube_active_title_prefix", "")
+        self.youtube_title_suffixes: list = self.config_data.get("youtube_title_suffixes", [])
+        self._youtube_active_title_suffix: str = self.config_data.get("youtube_active_title_suffix", "")
         self._youtube_queue: list[dict] = []
 
         # ── Tkinter vars ───────────────────────────────────────────────────────
@@ -1401,6 +1406,70 @@ class App(PagesMixin, EditorMixin, PreviewMixin, TurboMixin, TurboV2Mixin, Expor
     # CONFIG
     # ══════════════════════════════════════════════════════════════════════════
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # YOUTUBE — chaînes multiples
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _migrate_legacy_youtube_channel(self) -> None:
+        """Bascule l'ancien schéma mono-chaîne (un seul historique/token) vers
+        `youtube_channels` la première fois qu'une config d'avant cette
+        fonctionnalité est chargée."""
+        if self.youtube_channels:
+            if self.youtube_active_channel not in self.youtube_channels:
+                self.youtube_active_channel = next(iter(self.youtube_channels))
+            return
+
+        from app import youtube_auth
+        legacy_history = self.config_data.pop("youtube_history", {}) or {}
+        legacy_date = self.config_data.pop("youtube_last_scheduled_date", "") or ""
+
+        channel_id = "default"
+        self.youtube_channels = {
+            channel_id: {"label": "Ma chaîne", "history": legacy_history, "last_scheduled_date": legacy_date},
+        }
+        self.youtube_active_channel = channel_id
+
+        if youtube_auth.LEGACY_TOKEN_PATH.exists():
+            try:
+                youtube_auth.token_path(channel_id).write_bytes(
+                    youtube_auth.LEGACY_TOKEN_PATH.read_bytes())
+                youtube_auth.LEGACY_TOKEN_PATH.unlink()
+            except OSError:
+                pass
+
+    @property
+    def youtube_history(self) -> dict:
+        channel = self.youtube_channels.setdefault(
+            self.youtube_active_channel, {"label": "Ma chaîne", "history": {}, "last_scheduled_date": ""})
+        return channel.setdefault("history", {})
+
+    @property
+    def youtube_last_scheduled_date(self) -> str:
+        return self.youtube_channels.get(self.youtube_active_channel, {}).get("last_scheduled_date", "")
+
+    @youtube_last_scheduled_date.setter
+    def youtube_last_scheduled_date(self, value: str) -> None:
+        self.youtube_channels.setdefault(self.youtube_active_channel, {})["last_scheduled_date"] = value
+
+    def _youtube_channel_label(self, channel_id: str) -> str:
+        return self.youtube_channels.get(channel_id, {}).get("label", channel_id)
+
+    def _youtube_add_channel(self, label: str) -> str:
+        import uuid
+        channel_id = uuid.uuid4().hex[:12]
+        self.youtube_channels[channel_id] = {"label": label, "history": {}, "last_scheduled_date": ""}
+        self._persist_now()
+        return channel_id
+
+    def _youtube_switch_channel(self, channel_id: str) -> None:
+        if channel_id in self.youtube_channels:
+            self.youtube_active_channel = channel_id
+            self._persist_now()
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # CONFIG
+    # ══════════════════════════════════════════════════════════════════════════
+
     def _schedule_persist(self):
         if self._persist_job:
             self.after_cancel(self._persist_job)
@@ -1413,8 +1482,12 @@ class App(PagesMixin, EditorMixin, PreviewMixin, TurboMixin, TurboV2Mixin, Expor
         self.config_data["turbo_v2_history"] = self.turbo_v2_history
         self.config_data["turbo_v2_last_folder"] = getattr(self, "_turbo_v2_last_folder", "")
         self.config_data["youtube_profiles"] = self.youtube_profiles
-        self.config_data["youtube_history"] = self.youtube_history
-        self.config_data["youtube_last_scheduled_date"] = self.youtube_last_scheduled_date
+        self.config_data["youtube_channels"] = self.youtube_channels
+        self.config_data["youtube_active_channel"] = self.youtube_active_channel
+        self.config_data["youtube_title_prefixes"] = self.youtube_title_prefixes
+        self.config_data["youtube_active_title_prefix"] = self._youtube_active_title_prefix
+        self.config_data["youtube_title_suffixes"] = self.youtube_title_suffixes
+        self.config_data["youtube_active_title_suffix"] = self._youtube_active_title_suffix
         self.config_data["settings"] = {
             "title_text":       self.title_text.get(),
             "artist_text":      self.artist_text.get(),

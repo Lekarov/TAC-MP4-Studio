@@ -187,6 +187,24 @@ class TurboMixin:
                 if mode == "v2":
                     stem = safe_name(Path(audio).stem)
                     target_dir = Path(audio).resolve().parent
+                    expected_output = target_dir / f"{stem}.mp4"
+
+                    # Filet de sécurité : si <stem>.mp4 existe déjà à l'endroit où ce
+                    # rendu doit atterrir, ne jamais créer silencieusement un doublon
+                    # "(1).mp4" à côté. Ça peut arriver si l'historique local a raté
+                    # cette paire (config réinitialisée, empreinte pas encore vue).
+                    if expected_output.exists():
+                        fresh_done = self._turbo_v2_already_done(Path(audio), Path(image))
+                        if fresh_done:
+                            item["status"] = "✅ Déjà fait"
+                            item["_v2_output"] = fresh_done
+                            self.after(0, lambda i=item: i["_status_lbl"] and
+                                       i["_status_lbl"].configure(text="✅ Déjà fait", text_color=SUCCESS))
+                            continue
+                        _fail(item, "Sortie déjà présente (contenu différent)",
+                              "Conflit sortie")
+                        continue
+
                     final_output = self._turbo_v2_unique_output_path(target_dir, stem)
                     if len(str(final_output)) > self.WINDOWS_MAX_PATH:
                         _fail(item, "Chemin trop long", "Chemin trop long")

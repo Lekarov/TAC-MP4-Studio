@@ -283,9 +283,12 @@ class PagesMixin:
         if mode == "gen":
             _btn(top, "🗑  Vider l'historique", self._clear_all_history,
                  small=True, width=160, danger=True).pack(side="right", padx=(0, 8))
+            _btn(top, "🧹  Nettoyer les publiés", self._cleanup_published_exports,
+                 small=True, width=170).pack(side="right", padx=(0, 8))
         else:
             _btn(top, "🗑  Vider l'historique", self._clear_all_youtube_history,
                  small=True, width=160, danger=True).pack(side="right", padx=(0, 8))
+            self._youtube_channel_bar(top, lambda: self.show_history("youtube")).pack(side="left", padx=(20, 0))
 
         tabs_row = ctk.CTkFrame(outer, fg_color="transparent")
         tabs_row.pack(fill="x", pady=(0, 16))
@@ -339,11 +342,14 @@ class PagesMixin:
             inner = ctk.CTkFrame(card, fg_color="transparent")
             inner.pack(fill="x", padx=12, pady=10)
 
-            thumb_path = Path(item.get("folder", "")) / "_thumb.jpg"
-            if not thumb_path.exists():
-                vid = item.get("video", "")
-                if vid:
-                    thumb_path = Path(vid).parent / (Path(vid).stem + "_thumb.jpg")
+            if item.get("archived"):
+                thumb_path = Path(item.get("archive_thumb") or item.get("archive_cover") or "")
+            else:
+                thumb_path = Path(item.get("folder", "")) / "_thumb.jpg"
+                if not thumb_path.exists():
+                    vid = item.get("video", "")
+                    if vid:
+                        thumb_path = Path(vid).parent / (Path(vid).stem + "_thumb.jpg")
 
             if thumb_path.exists():
                 try:
@@ -369,6 +375,9 @@ class PagesMixin:
                          font=FONT_H2, text_color=TEXT, anchor="w").pack(side="left")
             ctk.CTkLabel(row1, text=f"  [{kind}]",
                          font=FONT_SEC, text_color=kind_color).pack(side="left")
+            if item.get("archived"):
+                ctk.CTkLabel(row1, text="  📦 Publié · nettoyé",
+                             font=FONT_SEC, text_color=MUTED).pack(side="left")
 
             ctk.CTkLabel(info, text=item.get("created_at", ""),
                          font=FONT_MU, text_color=MUTED, anchor="w").pack(anchor="w", pady=(2, 8))
@@ -378,13 +387,14 @@ class PagesMixin:
             _btn(btns, "📂 Ouvrir dossier",
                  lambda f=item.get("folder", ""): open_file(f),
                  small=True, width=130, height=28).pack(side="left", padx=(0, 6))
-            _btn(btns, "▶ Ouvrir vidéo",
-                 lambda v=item.get("video", ""): open_file(v),
-                 small=True, width=110, height=28).pack(side="left", padx=(0, 6))
-            if item.get("type") != "short":
-                _btn(btns, "🎬 Convertir en Short",
-                     lambda i=item: self._convert_to_short(i),
-                     small=True, width=160, height=28, accent=True).pack(side="left", padx=(0, 6))
+            if not item.get("archived"):
+                _btn(btns, "▶ Ouvrir vidéo",
+                     lambda v=item.get("video", ""): open_file(v),
+                     small=True, width=110, height=28).pack(side="left", padx=(0, 6))
+                if item.get("type") != "short":
+                    _btn(btns, "🎬 Convertir en Short",
+                         lambda i=item: self._convert_to_short(i),
+                         small=True, width=160, height=28, accent=True).pack(side="left", padx=(0, 6))
             _btn(btns, "✕ Supprimer",
                  lambda i=item: self._delete_history_item(i),
                  small=True, width=100, height=28, danger=True).pack(side="left")
@@ -421,6 +431,42 @@ class PagesMixin:
             self.history = [h for h in self.history if h.get("folder") != item.get("folder")]
             self._persist_now()
             self.show_history()
+
+    def _cleanup_published_exports(self):
+        from app import history_cleanup
+        from app.ui.app import _format_size
+
+        preview = history_cleanup.preview_cleanup(self.history, self.youtube_history)
+        if preview["count"] == 0:
+            messagebox.showinfo(
+                "Nettoyage",
+                "Aucun export publié sur YouTube à nettoyer pour l'instant.")
+            return
+
+        if not messagebox.askyesno(
+            "⚠ Nettoyer les exports publiés",
+            f"{preview['count']} création(s) déjà publiée(s) sur YouTube ont été "
+            "retrouvée(s) dans l'historique.\n\n"
+            "Pour chacune :\n"
+            "• le fichier vidéo MP4 sera supprimé\n"
+            "• le fichier audio source sera supprimé (sauf s'il est encore utilisé "
+            "par une variante Complet/Short sœur non publiée)\n"
+            "• une vignette vidéo et une pochette compressées seront conservées "
+            "comme trace visuelle\n"
+            "• l'entrée reste dans l'Historique, marquée \"Publié · nettoyé\"\n\n"
+            f"💾 Espace libéré estimé : {_format_size(preview['freed_bytes'])}\n\n"
+            "⚠ Action irréversible sur les fichiers vidéo/audio. Confirmer ?",
+            icon="warning",
+        ):
+            return
+
+        result = history_cleanup.cleanup_published_exports(self.history, self.youtube_history)
+        self._persist_now()
+        self.show_history()
+        messagebox.showinfo(
+            "Nettoyage terminé",
+            f"{result['count']} création(s) nettoyée(s) — "
+            f"{_format_size(result['freed_bytes'])} libéré(s).")
 
     # ── Historique de publication YouTube ────────────────────────────────────
 

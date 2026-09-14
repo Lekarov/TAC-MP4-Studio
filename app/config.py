@@ -39,6 +39,12 @@ def default_config() -> dict:
         "youtube_profiles": {},
         "youtube_history": {},
         "youtube_last_scheduled_date": "",
+        "youtube_channels": {},
+        "youtube_active_channel": "",
+        "youtube_title_prefixes": [],
+        "youtube_active_title_prefix": "",
+        "youtube_title_suffixes": [],
+        "youtube_active_title_suffix": "",
         "settings": {
             "global_preset": "Dark Premium",
             "particle_preset": "Premium",

@@ -22,11 +22,15 @@ from pathlib import Path
 from tkinter import filedialog, messagebox
 
 
-def _fingerprint(path: Path) -> list[float] | None:
-    """Empreinte légère (taille, date de modif) pour détecter un fichier changé."""
+def _fingerprint(path: Path) -> int | None:
+    """Empreinte légère (taille) pour détecter un fichier changé.
+
+    Volontairement basée sur la seule taille, pas la date de modification :
+    un déplacement, une copie ou une resynchro (NAS/cloud) changent souvent le
+    mtime sans changer le contenu, ce qui faisait perdre le statut "déjà fait"
+    à des paires pourtant inchangées."""
     try:
-        st = path.stat()
-        return [st.st_size, st.st_mtime]
+        return path.stat().st_size
     except OSError:
         return None
 
@@ -135,6 +139,14 @@ class TurboV2Mixin:
         except OSError:
             return str(audio_path).casefold()
 
+    @staticmethod
+    def _turbo_v2_normalize_fp(stored_fp) -> int | None:
+        """Compatibilité avec les anciennes empreintes [taille, mtime] enregistrées
+        avant l'abandon du mtime — n'en garde que la taille."""
+        if isinstance(stored_fp, (list, tuple)):
+            return stored_fp[0] if stored_fp else None
+        return stored_fp
+
     def _turbo_v2_already_done(self, audio_path: Path, image_path: Path) -> str | None:
         """Retourne le chemin de sortie déjà rendu si la paire n'a pas changé, sinon None."""
         key = self._turbo_v2_history_key(audio_path)
@@ -148,9 +160,9 @@ class TurboV2Mixin:
 
         audio_fp = _fingerprint(audio_path)
         image_fp = _fingerprint(image_path)
-        if audio_fp is None or audio_fp != entry.get("audio_fp"):
+        if audio_fp is None or audio_fp != self._turbo_v2_normalize_fp(entry.get("audio_fp")):
             return None
-        if image_fp is None or image_fp != entry.get("image_fp"):
+        if image_fp is None or image_fp != self._turbo_v2_normalize_fp(entry.get("image_fp")):
             return None
 
         return output

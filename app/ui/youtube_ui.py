@@ -104,6 +104,72 @@ def _history_key(path: str) -> str:
 class YoutubeMixin:
 
     # ══════════════════════════════════════════════════════════════════════════
+    # CHAÎNES — sélecteur multi-comptes
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _youtube_channel_bar(self, parent, on_switch):
+        """Petit sélecteur de chaîne réutilisable : nom de la chaîne active,
+        combo pour en choisir une autre, bouton pour en autoriser une nouvelle."""
+        import customtkinter as ctk
+        import tkinter as tk
+        from app.ui.app import SURF2, SURF3, BORDER, TEXT, MUTED, FONT_SM, _btn
+
+        bar = ctk.CTkFrame(parent, fg_color="transparent")
+
+        label_to_id = {ch.get("label", cid): cid for cid, ch in self.youtube_channels.items()}
+        labels = list(label_to_id.keys()) or ["(aucune chaîne)"]
+        current_label = self._youtube_channel_label(self.youtube_active_channel)
+
+        ctk.CTkLabel(bar, text="📺 Chaîne", text_color=MUTED, font=FONT_SM).pack(side="left", padx=(0, 6))
+        var = tk.StringVar(value=current_label if current_label in labels else labels[0])
+
+        def _on_select(_choice=None):
+            chosen_id = label_to_id.get(var.get())
+            if chosen_id and chosen_id != self.youtube_active_channel:
+                self._youtube_switch_channel(chosen_id)
+                on_switch()
+
+        ctk.CTkComboBox(bar, variable=var, values=labels, command=_on_select,
+                        fg_color=SURF3, border_color=BORDER, button_color=SURF2,
+                        button_hover_color=BORDER, dropdown_fg_color=SURF2,
+                        text_color=TEXT, font=FONT_SM, width=170).pack(side="left", padx=(0, 6))
+        _btn(bar, "➕ Nouvelle chaîne", self._youtube_prompt_new_channel,
+             small=True, width=150, height=28).pack(side="left")
+        return bar
+
+    def _youtube_prompt_new_channel(self):
+        import customtkinter as ctk
+        import tkinter as tk
+        from app.ui.app import BG, SURF3, BORDER, TEXT, MUTED, FONT_SM, _btn
+
+        win = ctk.CTkToplevel(self)
+        win.title("Nouvelle chaîne YouTube")
+        win.configure(fg_color=BG)
+        win.geometry("380x160")
+        win.grab_set()
+
+        ctk.CTkLabel(win, text="Nom de la chaîne (juste pour t'y retrouver)",
+                     text_color=MUTED, font=FONT_SM, anchor="w").pack(
+            anchor="w", padx=16, pady=(16, 2))
+        name_var = tk.StringVar(value="")
+        entry = ctk.CTkEntry(win, textvariable=name_var, fg_color=SURF3, border_color=BORDER,
+                              text_color=TEXT, font=FONT_SM)
+        entry.pack(fill="x", padx=16, pady=(0, 12))
+        entry.focus_set()
+
+        def _create():
+            label = name_var.get().strip()
+            if not label:
+                messagebox.showerror("Chaîne", "Le nom de la chaîne est obligatoire.")
+                return
+            channel_id = self._youtube_add_channel(label)
+            win.destroy()
+            self.show_youtube_auth(channel_id)
+
+        _btn(win, "Créer et autoriser", _create, accent=True, height=38).pack(
+            fill="x", padx=16, pady=(0, 16))
+
+    # ══════════════════════════════════════════════════════════════════════════
     # CHOIX
     # ══════════════════════════════════════════════════════════════════════════
 
@@ -122,6 +188,7 @@ class YoutubeMixin:
         top.pack(fill="x", padx=32, pady=(20, 0))
         _btn(top, "← Accueil", self.show_home, small=True, width=120).pack(side="right")
         _btn(top, "👤 Profils", self.show_youtube_profiles, small=True, width=120).pack(side="right", padx=(0, 8))
+        self._youtube_channel_bar(top, self.show_youtube_choice).pack(side="left")
 
         center = ctk.CTkFrame(outer, fg_color="transparent")
         center.place(relx=0.5, rely=0.46, anchor="center")
@@ -212,12 +279,22 @@ class YoutubeMixin:
         if skipped:
             self._set_status(f"📺 {len(found)} nouvelle(s), {skipped} déjà publiée(s)")
 
+    def _youtube_build_title(self, base_title: str) -> str:
+        prefix = self._youtube_active_title_prefix
+        suffix = self._youtube_active_title_suffix
+        title = f"{prefix} - {base_title}" if prefix else base_title
+        if suffix:
+            title = f"{title} - {suffix}"
+        return title
+
     def _youtube_add_to_queue(self, path: str):
         import tkinter as tk
         active = self.youtube_profiles.get(self._youtube_active_profile, {})
+        base_title = _clean_title(Path(path).stem)
         item = {
             "path": path,
-            "title_var": tk.StringVar(value=_clean_title(Path(path).stem)),
+            "base_title": base_title,
+            "title_var": tk.StringVar(value=self._youtube_build_title(base_title)),
             "tags_var": tk.StringVar(value=", ".join(active.get("tags", []))),
             "date_var": tk.StringVar(value=""),
             "description": active.get("description", ""),
@@ -246,6 +323,7 @@ class YoutubeMixin:
         top.pack(fill="x", pady=(0, 14))
         ctk.CTkLabel(top, text="📺 File de publication", font=FONT_H1, text_color=TEXT).pack(side="left")
         _btn(top, "← YouTube", self.show_youtube_choice, small=True, width=120).pack(side="right")
+        self._youtube_channel_bar(top, self.show_youtube_queue).pack(side="left", padx=(20, 0))
 
         if not self._youtube_queue:
             ctk.CTkLabel(outer, text="File vide.", text_color=MUTED, font=FONT_SM).pack(pady=40)
@@ -287,6 +365,36 @@ class YoutubeMixin:
                      "déjà programmée, et règle le départ sur le lendemain.")
         except Exception:
             pass
+
+        ci2 = ctk.CTkFrame(ctrl, fg_color="transparent")
+        ci2.pack(fill="x", padx=16, pady=(0, 12))
+        ctk.CTkLabel(ci2, text="Préfixe titre", text_color=MUTED, font=FONT_MU).pack(side="left", padx=(0, 6))
+        prefix_values = ["(aucun)"] + self.youtube_title_prefixes
+        current_prefix = self._youtube_active_title_prefix or "(aucun)"
+        self._youtube_prefix_var = tk.StringVar(
+            value=current_prefix if current_prefix in prefix_values else "(aucun)")
+        ctk.CTkComboBox(ci2, variable=self._youtube_prefix_var, values=prefix_values,
+                        fg_color=SURF3, border_color=BORDER, button_color=SURF2,
+                        button_hover_color=BORDER, dropdown_fg_color=SURF2,
+                        text_color=TEXT, font=FONT_SM, width=180).pack(side="left", padx=(0, 6))
+        _btn(ci2, "Appliquer à tous", self._youtube_apply_prefix_to_all,
+             small=True, width=130, height=28).pack(side="left", padx=(0, 8))
+        _btn(ci2, "⚙ Gérer", lambda: self._youtube_manage_affixes("prefix"),
+             small=True, width=90, height=28).pack(side="left", padx=(0, 20))
+
+        ctk.CTkLabel(ci2, text="Suffixe titre", text_color=MUTED, font=FONT_MU).pack(side="left", padx=(0, 6))
+        suffix_values = ["(aucun)"] + self.youtube_title_suffixes
+        current_suffix = self._youtube_active_title_suffix or "(aucun)"
+        self._youtube_suffix_var = tk.StringVar(
+            value=current_suffix if current_suffix in suffix_values else "(aucun)")
+        ctk.CTkComboBox(ci2, variable=self._youtube_suffix_var, values=suffix_values,
+                        fg_color=SURF3, border_color=BORDER, button_color=SURF2,
+                        button_hover_color=BORDER, dropdown_fg_color=SURF2,
+                        text_color=TEXT, font=FONT_SM, width=180).pack(side="left", padx=(0, 6))
+        _btn(ci2, "Appliquer à tous", self._youtube_apply_suffix_to_all,
+             small=True, width=130, height=28).pack(side="left", padx=(0, 8))
+        _btn(ci2, "⚙ Gérer", lambda: self._youtube_manage_affixes("suffix"),
+             small=True, width=90, height=28).pack(side="left")
 
         # ── Liste des vidéos ─────────────────────────────────────────────────
         hdr = ctk.CTkFrame(outer, fg_color=SURF3, corner_radius=6)
@@ -395,6 +503,104 @@ class YoutubeMixin:
             item["description"] = profile.get("description", "")
         messagebox.showinfo("Profil", f"Profil « {name} » appliqué à {len(self._youtube_queue)} vidéo(s).")
 
+    def _youtube_affix_list(self, kind: str) -> list:
+        return self.youtube_title_prefixes if kind == "prefix" else self.youtube_title_suffixes
+
+    def _youtube_active_affix(self, kind: str) -> str:
+        return self._youtube_active_title_prefix if kind == "prefix" else self._youtube_active_title_suffix
+
+    def _youtube_set_active_affix(self, kind: str, value: str) -> None:
+        if kind == "prefix":
+            self._youtube_active_title_prefix = value
+        else:
+            self._youtube_active_title_suffix = value
+
+    def _youtube_apply_prefix_to_all(self):
+        self._youtube_apply_affix_to_all("prefix", self._youtube_prefix_var.get())
+
+    def _youtube_apply_suffix_to_all(self):
+        self._youtube_apply_affix_to_all("suffix", self._youtube_suffix_var.get())
+
+    def _youtube_apply_affix_to_all(self, kind: str, choice: str):
+        label = "Préfixe" if kind == "prefix" else "Suffixe"
+        value = "" if choice == "(aucun)" else choice
+        self._youtube_set_active_affix(kind, value)
+        for item in self._youtube_queue:
+            item["title_var"].set(self._youtube_build_title(item.get("base_title", item["title_var"].get())))
+        self._persist_now()
+        messagebox.showinfo(
+            label,
+            f"{label} « {value} » appliqué à {len(self._youtube_queue)} vidéo(s)."
+            if value else f"{label} retiré de {len(self._youtube_queue)} vidéo(s).")
+
+    def _youtube_manage_affixes(self, kind: str):
+        import customtkinter as ctk
+        import tkinter as tk
+        from app.ui.app import BG, SURF2, SURF3, BORDER, TEXT, MUTED, FONT_H2, FONT_SM, _btn
+
+        label = "Préfixes" if kind == "prefix" else "Suffixes"
+        example = ('Ex. "El Cheshire" → titre publié : "El Cheshire - NomDuFichier"' if kind == "prefix"
+                   else 'Ex. "El Cheshire" → titre publié : "NomDuFichier - El Cheshire"')
+        affix_list = self._youtube_affix_list(kind)
+
+        win = ctk.CTkToplevel(self)
+        win.title(f"{label} de titre")
+        win.configure(fg_color=BG)
+        win.geometry("380x420")
+        win.grab_set()
+
+        ctk.CTkLabel(win, text=f"{label} de titre", font=FONT_H2, text_color=TEXT).pack(
+            anchor="w", padx=16, pady=(16, 4))
+        ctk.CTkLabel(win, text=example, text_color=MUTED, font=FONT_SM,
+                     wraplength=340, justify="left").pack(anchor="w", padx=16, pady=(0, 10))
+
+        list_frame = ctk.CTkScrollableFrame(win, fg_color="transparent",
+                                            scrollbar_button_color=SURF3)
+        list_frame.pack(fill="both", expand=True, padx=16)
+
+        def _refresh_list():
+            for w in list_frame.winfo_children():
+                w.destroy()
+            if not affix_list:
+                ctk.CTkLabel(list_frame, text=f"Aucun {label.lower()[:-1]} pour l'instant.",
+                             text_color=MUTED, font=FONT_SM).pack(pady=10)
+            for value in affix_list:
+                row = ctk.CTkFrame(list_frame, fg_color=SURF2, corner_radius=6)
+                row.pack(fill="x", pady=3)
+                ctk.CTkLabel(row, text=value, text_color=TEXT, font=FONT_SM,
+                             anchor="w").pack(side="left", fill="x", expand=True, padx=10, pady=8)
+                _btn(row, "✕", lambda v=value: _delete(v), small=True, width=32, height=26,
+                     danger=True).pack(side="right", padx=6)
+
+        def _delete(value):
+            affix_list.remove(value)
+            if self._youtube_active_affix(kind) == value:
+                self._youtube_set_active_affix(kind, "")
+            self._persist_now()
+            _refresh_list()
+
+        def _add():
+            new_value = new_var.get().strip()
+            if not new_value:
+                return
+            if new_value not in affix_list:
+                affix_list.append(new_value)
+                self._persist_now()
+            new_var.set("")
+            _refresh_list()
+
+        _refresh_list()
+
+        add_row = ctk.CTkFrame(win, fg_color="transparent")
+        add_row.pack(fill="x", padx=16, pady=(10, 16))
+        new_var = tk.StringVar(value="")
+        entry = ctk.CTkEntry(add_row, textvariable=new_var,
+                              placeholder_text=f"Nouveau {label.lower()[:-1]} (ex: El Cheshire)",
+                              fg_color=SURF3, border_color=BORDER, text_color=TEXT, font=FONT_SM)
+        entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        entry.bind("<Return>", lambda _e: _add())
+        _btn(add_row, "➕ Ajouter", _add, small=True, width=100, height=32, accent=True).pack(side="left")
+
     def _youtube_next_start_date(self) -> str:
         last = self.youtube_last_scheduled_date
         today = datetime.now().date()
@@ -495,7 +701,7 @@ class YoutubeMixin:
 
     def _youtube_authorized(self) -> bool:
         from app import youtube_auth
-        return youtube_auth.has_refresh_token()
+        return youtube_auth.has_refresh_token(self.youtube_active_channel)
 
     def _youtube_start_upload(self):
         from app.ui.app import DANGER, SUCCESS, WARN
@@ -518,6 +724,8 @@ class YoutubeMixin:
 
         self._youtube_launch_btn.configure(state="disabled")
         items = list(self._youtube_queue)
+        channel_id = self.youtube_active_channel
+        channel_history = self.youtube_history  # figé sur la chaîne active pour toute la durée de l'upload
 
         def worker():
             from app import youtube_auth, youtube_upload
@@ -526,11 +734,11 @@ class YoutubeMixin:
             client_id = self.config_data.get("youtube_oauth_client_id", "")
             client_secret = self.config_data.get("youtube_oauth_client_secret", "")
             ok_count = 0
-            last_date = self.youtube_last_scheduled_date
+            last_date = self.youtube_channels.get(channel_id, {}).get("last_scheduled_date", "")
 
             for item in items:
                 self.after(0, lambda i=item: self._youtube_set_row_status(i, "⏳ Upload...", WARN))
-                access_token = youtube_auth.get_access_token(client_id, client_secret)
+                access_token = youtube_auth.get_access_token(client_id, client_secret, channel_id)
                 if not access_token:
                     self.after(0, lambda i=item: self._youtube_set_row_status(i, "✕ Non autorisé", DANGER))
                     continue
@@ -559,7 +767,7 @@ class YoutubeMixin:
                     self.after(0, lambda i=item, m=str(exc): self._youtube_set_row_status(i, f"✕ {m}", DANGER))
                     continue
 
-                self.youtube_history[_history_key(item["path"])] = {
+                channel_history[_history_key(item["path"])] = {
                     "title": item["title_var"].get().strip(),
                     "youtube_id": video_id,
                     "scheduled_date": date_str,
@@ -569,7 +777,7 @@ class YoutubeMixin:
                 ok_count += 1
                 self.after(0, lambda i=item: self._youtube_set_row_status(i, "✅ Publiée", SUCCESS))
 
-            self.youtube_last_scheduled_date = last_date
+            self.youtube_channels.setdefault(channel_id, {})["last_scheduled_date"] = last_date
             self.after(0, self._persist_now)
             self.after(0, lambda: self._youtube_launch_btn.configure(state="normal"))
             self.after(0, lambda: messagebox.showinfo(
@@ -590,10 +798,14 @@ class YoutubeMixin:
     # AUTORISATION
     # ══════════════════════════════════════════════════════════════════════════
 
-    def show_youtube_auth(self):
+    def show_youtube_auth(self, channel_id: str | None = None):
         import customtkinter as ctk
         import tkinter as tk
         from app.ui.app import BG, SURF2, BORDER, TEXT, MUTED, ACCLT, FONT_H1, FONT_H2, FONT_SM, _btn, _card
+
+        # channel_id explicite = autorisation d'une chaîne fraîchement créée ;
+        # sinon on (ré)autorise la chaîne actuellement active.
+        self._youtube_auth_target_channel = channel_id or self.youtube_active_channel
 
         self._clear_main()
         self._set_status("📺 Autorisation YouTube")
@@ -606,7 +818,9 @@ class YoutubeMixin:
         center.place(relx=0.5, rely=0.44, anchor="center")
 
         ctk.CTkLabel(center, text="Autoriser l'accès YouTube", font=FONT_H1,
-                     text_color=TEXT).pack(pady=(0, 16))
+                     text_color=TEXT).pack(pady=(0, 4))
+        ctk.CTkLabel(center, text=f"Chaîne : {self._youtube_channel_label(self._youtube_auth_target_channel)}",
+                     text_color=MUTED, font=FONT_SM).pack(pady=(0, 16))
 
         client_id = self.config_data.get("youtube_oauth_client_id", "")
         client_secret = self.config_data.get("youtube_oauth_client_secret", "")
@@ -684,16 +898,20 @@ class YoutubeMixin:
         self._youtube_auth_status_lbl.configure(
             text="Ouvrez le lien, entrez le code, puis validez.\nEn attente de validation...")
 
+        target_channel = self._youtube_auth_target_channel
+
         def worker():
             ok, message = youtube_auth.poll_for_token(
                 client_id, client_secret,
                 device.get("device_code", ""),
                 int(device.get("interval", 5)),
                 int(device.get("expires_in", 600)),
+                target_channel,
             )
             self.after(0, lambda: self._youtube_auth_status_lbl.configure(text=message))
             self.after(0, lambda: self._youtube_auth_btn.configure(state="normal"))
             if ok:
+                self.after(0, lambda: self._youtube_switch_channel(target_channel))
                 self.after(0, lambda: messagebox.showinfo("YouTube", message))
 
         threading.Thread(target=worker, daemon=True).start()
@@ -738,6 +956,7 @@ class YoutubeMixin:
              small=True, width=130).pack(side="right", padx=(0, 8))
         _btn(top, "🔀 Réorganiser (diversifier)", self._youtube_reschedule_start,
              small=True, width=210, accent=True).pack(side="right", padx=(0, 8))
+        self._youtube_channel_bar(top, self.show_youtube_library).pack(side="left", padx=(20, 0))
 
         body = ctk.CTkFrame(outer, fg_color="transparent")
         body.pack(fill="both", expand=True)
@@ -786,7 +1005,7 @@ class YoutubeMixin:
         from app import youtube_auth
         client_id = self.config_data.get("youtube_oauth_client_id", "")
         client_secret = self.config_data.get("youtube_oauth_client_secret", "")
-        return youtube_auth.get_access_token(client_id, client_secret)
+        return youtube_auth.get_access_token(client_id, client_secret, self.youtube_active_channel)
 
     def _youtube_lib_load_playlists(self):
         import customtkinter as ctk
@@ -896,7 +1115,7 @@ class YoutubeMixin:
                 "Le compte YouTube n'a pas (ou plus) les droits nécessaires "
                 "pour lire vos vidéos. Relancer l'autorisation maintenant ?"):
             from app import youtube_auth
-            youtube_auth.forget_token()
+            youtube_auth.forget_token(self.youtube_active_channel)
             self.show_youtube_auth()
         else:
             self.show_youtube_choice()
