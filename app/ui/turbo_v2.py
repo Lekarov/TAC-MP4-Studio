@@ -333,5 +333,15 @@ class TurboV2Mixin:
         if not candidates:
             messagebox.showwarning("Aperçu", "Importez d'abord un dossier de musiques.")
             return
-        pick = random.choice(candidates)
+
+        # Évite de retomber sur le même fichier que le tirage précédent tant
+        # qu'il reste d'autres candidats (sinon un tirage uniforme peut, par
+        # pur hasard, redonner le même choix plusieurs fois de suite).
+        last_audio = getattr(self, "_turbo_preview_last_audio", None)
+        pool = [it for it in candidates if it["audio"] != last_audio]
+        if not pool:
+            pool = candidates
+
+        pick = random.choice(pool)
+        self._turbo_preview_last_audio = pick["audio"]
         self._turbo_preview(pick)

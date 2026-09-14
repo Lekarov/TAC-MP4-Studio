@@ -9,8 +9,12 @@ rapport à la précédente.
 from __future__ import annotations
 
 import heapq
+import json
+import re
 import threading
+import unicodedata
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tkinter import filedialog, messagebox
@@ -26,6 +30,43 @@ NO_PLAYLIST_LABEL = "Sans playlist"
 
 def _clean_title(stem: str) -> str:
     return " ".join(stem.replace("_", " ").replace("-", " ").split())
+
+
+def _normalize_id(s: str) -> str:
+    """Normalise un ID/nom de fichier pour une correspondance souple :
+    accents, casse et séparateurs (espaces/tirets/underscores) ignorés."""
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = s.casefold()
+    return re.sub(r"[\s_-]+", " ", s).strip()
+
+
+def _find_metadata_json(folder: Path) -> Path | None:
+    """Le .json le plus récemment modifié du dossier, s'il y en a un."""
+    candidates = sorted(folder.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return candidates[0] if candidates else None
+
+
+def _load_metadata_entries(json_path: Path) -> dict[str, dict]:
+    """Retourne {id_normalisé: {title, description, tags}} à partir d'un JSON
+    au format [{"ID": ..., "title": ..., "description": ..., "tags": [...]}, ...].
+    En cas d'ID en double, la dernière entrée du fichier l'emporte."""
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, list):
+        raise ValueError("le JSON doit être une liste d'entrées")
+
+    entries: dict[str, dict] = {}
+    for entry in data:
+        if not isinstance(entry, dict) or not entry.get("ID"):
+            continue
+        key = _normalize_id(str(entry["ID"]))
+        entries[key] = {
+            "title": str(entry.get("title") or ""),
+            "description": str(entry.get("description") or ""),
+            "tags": [str(t) for t in (entry.get("tags") or [])],
+        }
+    return entries
 
 
 def _parse_publish_at(value: str) -> datetime:
@@ -253,16 +294,17 @@ class YoutubeMixin:
         folder = filedialog.askdirectory(title="Choisir un dossier de vidéos")
         if not folder:
             return
+        folder_path = Path(folder)
         history = self.youtube_history
         found = []
         skipped = 0
-        for p in sorted(Path(folder).iterdir()):
+        for p in sorted(folder_path.iterdir()):
             if p.suffix.lower() not in VIDEO_EXTS:
                 continue
             if _history_key(str(p)) in history:
                 skipped += 1
                 continue
-            found.append(str(p))
+            found.append(p)
 
         if not found:
             messagebox.showinfo(
@@ -272,12 +314,51 @@ class YoutubeMixin:
                 "Aucune vidéo trouvée dans ce dossier.")
             return
 
+        # Métadonnées (titre/description/tags) associées par ID via un JSON
+        # trouvé dans le même dossier — voir _load_metadata_entries().
+        metadata: dict[str, dict] = {}
+        meta_error: str | None = None
+        json_path = _find_metadata_json(folder_path)
+        if json_path:
+            try:
+                metadata = _load_metadata_entries(json_path)
+            except (ValueError, OSError, json.JSONDecodeError) as exc:
+                meta_error = str(exc)
+
         self._youtube_queue = []
+        matched = 0
         for p in found:
-            self._youtube_add_to_queue(p)
+            meta = metadata.get(_normalize_id(p.stem))
+            if meta:
+                matched += 1
+            self._youtube_add_to_queue(str(p), meta=meta)
         self.show_youtube_queue()
+
+        status_parts = [f"{len(found)} nouvelle(s)"]
         if skipped:
-            self._set_status(f"📺 {len(found)} nouvelle(s), {skipped} déjà publiée(s)")
+            status_parts.append(f"{skipped} déjà publiée(s)")
+        if json_path and not meta_error:
+            status_parts.append(f"{matched}/{len(found)} associée(s) via {json_path.name}")
+        self._set_status(f"📺 {', '.join(status_parts)}")
+
+        if meta_error:
+            messagebox.showwarning(
+                "Métadonnées JSON",
+                f"Le fichier {json_path.name} n'a pas pu être lu ({meta_error}).\n"
+                "Les vidéos ont été importées avec les valeurs par défaut.")
+        elif json_path:
+            found_keys = {_normalize_id(p.stem) for p in found}
+            orphan_ids = set(metadata.keys()) - found_keys
+            details = []
+            if matched < len(found):
+                details.append(
+                    f"{len(found) - matched} vidéo(s) sans entrée correspondante dans "
+                    f"{json_path.name} (valeurs par défaut utilisées).")
+            if orphan_ids:
+                details.append(
+                    f"{len(orphan_ids)} ID du JSON sans vidéo correspondante dans ce dossier.")
+            if details:
+                messagebox.showinfo("Métadonnées JSON", "\n".join(details))
 
     def _youtube_build_title(self, base_title: str) -> str:
         prefix = self._youtube_active_title_prefix
@@ -287,20 +368,56 @@ class YoutubeMixin:
             title = f"{title} - {suffix}"
         return title
 
-    def _youtube_add_to_queue(self, path: str):
+    def _youtube_add_to_queue(self, path: str, meta: dict | None = None):
+        """`meta`, si fourni (voir _load_metadata_entries), applique un
+        titre/description/tags importés par JSON à la place des valeurs par
+        défaut (nom de fichier + profil actif) — champ par champ, seulement
+        s'il est renseigné dans le JSON."""
         import tkinter as tk
         active = self.youtube_profiles.get(self._youtube_active_profile, {})
-        base_title = _clean_title(Path(path).stem)
+        file_id = _clean_title(Path(path).stem)
+        base_title = meta["title"] if meta and meta.get("title") else file_id
+        tags = meta["tags"] if meta and meta.get("tags") else active.get("tags", [])
+        description = meta["description"] if meta and meta.get("description") else active.get("description", "")
         item = {
             "path": path,
+            "file_id": file_id,
             "base_title": base_title,
             "title_var": tk.StringVar(value=self._youtube_build_title(base_title)),
-            "tags_var": tk.StringVar(value=", ".join(active.get("tags", []))),
+            "tags_var": tk.StringVar(value=", ".join(tags)),
             "date_var": tk.StringVar(value=""),
-            "description": active.get("description", ""),
+            "description": description,
             "status": "En attente",
         }
         self._youtube_queue.append(item)
+
+    def _youtube_export_metadata_template(self):
+        """Génère un JSON avec un ID par vidéo de la file (nom de fichier
+        nettoyé, indépendant du titre déjà appliqué), titre/description/tags
+        vides à compléter — voir _load_metadata_entries() pour le format
+        attendu en retour."""
+        if not self._youtube_queue:
+            messagebox.showwarning("Export JSON", "File vide.")
+            return
+        path = filedialog.asksaveasfilename(
+            title="Exporter le modèle JSON",
+            defaultextension=".json",
+            initialfile="metadata.json",
+            filetypes=[("JSON", "*.json")])
+        if not path:
+            return
+        data = [
+            {"ID": item.get("file_id", item["base_title"]), "title": "", "description": "", "tags": []}
+            for item in self._youtube_queue
+        ]
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            messagebox.showerror("Export JSON", f"Impossible d'écrire le fichier :\n{exc}")
+            return
+        messagebox.showinfo(
+            "Export JSON", f"Modèle exporté : {Path(path).name}\n({len(data)} entrée(s))")
 
     # ══════════════════════════════════════════════════════════════════════════
     # FILE D'ATTENTE — édition avant publication
@@ -323,6 +440,9 @@ class YoutubeMixin:
         top.pack(fill="x", pady=(0, 14))
         ctk.CTkLabel(top, text="📺 File de publication", font=FONT_H1, text_color=TEXT).pack(side="left")
         _btn(top, "← YouTube", self.show_youtube_choice, small=True, width=120).pack(side="right")
+        if self._youtube_queue:
+            _btn(top, "📤 Exporter modèle JSON", self._youtube_export_metadata_template,
+                 small=True, width=190).pack(side="right", padx=(0, 8))
         self._youtube_channel_bar(top, self.show_youtube_queue).pack(side="left", padx=(20, 0))
 
         if not self._youtube_queue:
@@ -1089,17 +1209,26 @@ class YoutubeMixin:
                 self.after(0, lambda e=exc: self._youtube_lib_error(e))
                 return
 
-            # Téléchargement des miniatures (best-effort, thread déjà en arrière-plan)
+            # Téléchargement des miniatures (best-effort, en parallèle : les
+            # faire une par une pouvait prendre plusieurs minutes sur une
+            # chaîne avec beaucoup de vidéos, donnant l'impression que le
+            # chargement était bloqué en boucle).
             for v in videos:
                 v["_thumb_bytes"] = None
+
+            def _fetch_thumb(v):
                 url = v.get("thumbnail_url")
-                if url:
-                    try:
-                        r = requests.get(url, timeout=10)
-                        if r.status_code == 200:
-                            v["_thumb_bytes"] = r.content
-                    except Exception:
-                        pass
+                if not url:
+                    return
+                try:
+                    r = requests.get(url, timeout=8)
+                    if r.status_code == 200:
+                        v["_thumb_bytes"] = r.content
+                except Exception:
+                    pass
+
+            with ThreadPoolExecutor(max_workers=12) as pool:
+                list(pool.map(_fetch_thumb, videos))
 
             self.after(0, lambda: self._youtube_lib_set_videos(videos))
 

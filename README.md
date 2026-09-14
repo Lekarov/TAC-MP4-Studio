@@ -7,7 +7,7 @@
 Transforme n'importe quel fichier audio en vidéo visualisée frame par frame,  
 synchronisée beat par beat, exportée en qualité broadcast.
 
-![Version](https://img.shields.io/badge/version-1.13.1-7c3aed?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.14.0-7c3aed?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.8+-5C3EE8?style=flat-square&logo=opencv&logoColor=white)
 ![CustomTkinter](https://img.shields.io/badge/UI-CustomTkinter-1F6AA5?style=flat-square)
@@ -101,7 +101,7 @@ Depuis l'accueil, bouton **📺 Publier sur YouTube** — trois entrées :
 | Entrée | Usage |
 |---|---|
 | 🎬 **Upload manuel** | Sélectionne un fichier vidéo précis à publier |
-| 📁 **Upload dossier** | Scanne un dossier ; seules les vidéos jamais publiées (anti-doublon nom + taille) sont proposées |
+| 📁 **Upload dossier** | Scanne un dossier ; seules les vidéos jamais publiées (anti-doublon nom + taille) sont proposées ; un `.json` de métadonnées présent dans le dossier est associé automatiquement (voir ci-dessous) |
 | 📚 **Mes vidéos** | Parcourt playlists et vidéos déjà en ligne (filtrable par visibilité), édition titre/description/tags/visibilité, et réorganisation du planning |
 
 ### Upload programmé
@@ -110,6 +110,27 @@ Depuis l'accueil, bouton **📺 Publier sur YouTube** — trois entrées :
 - **🔄 Synchro YouTube** : va chercher directement sur YouTube la date de la dernière vidéo encore programmée sur la chaîne et règle la date de départ sur le lendemain — évite de devoir vérifier manuellement sur YouTube avant de lancer une nouvelle file
 - **Profils** (👤) : nom + tags par défaut + description par défaut, réutilisables en un clic sur toute la file
 - **Préfixe / Suffixe de titre** : deux listes réutilisables (⚙ Gérer) pour encadrer automatiquement le titre de chaque vidéo, ex. préfixe `El Cheshire` → titre publié `El Cheshire - NomDuFichier` ; combinables (préfixe + suffixe), « Appliquer à tous » reformate toute la file d'un coup
+
+### 📥 Import JSON de métadonnées (Upload dossier)
+Pour publier beaucoup de vidéos d'un coup avec un titre/description/tags précis par vidéo (préparés à l'avance, par IA ou autre outil), dépose un fichier `.json` dans le même dossier que les vidéos avant de faire **📁 Upload dossier** — il est détecté et appliqué automatiquement (le plus récent si plusieurs `.json` traînent).
+
+Format attendu, une liste d'entrées avec un `ID` = nom du fichier vidéo (sans extension) :
+```json
+[
+  {
+    "ID": "Voile Actée",
+    "title": "Voile Actée (Lofi Remix)",
+    "description": "Description complète de la vidéo...",
+    "tags": ["lofi", "chill", "voile"]
+  }
+]
+```
+- La correspondance ID ↔ nom de fichier est **souple** (accents, majuscules, espaces/tirets/underscores ignorés) : `voile-actee` correspond à `Voile Actée.mp4`
+- Chaque champ (`title`, `description`, `tags`) est optionnel et remplace individuellement la valeur par défaut (nom de fichier / profil actif) *si* présent ; une vidéo sans entrée JSON garde ses valeurs par défaut sans bloquer l'import
+- Le `title` importé passe quand même par le préfixe/suffixe actif
+- En cas d'ID en double dans le JSON, la dernière entrée du fichier l'emporte
+- Un résumé après import signale les vidéos sans correspondance JSON et les ID du JSON sans vidéo correspondante
+- **📤 Exporter modèle JSON** (dans la file de publication) génère un JSON avec un ID par vidéo de la file actuelle et des champs vides à remplir — pratique pour démarrer sans tout retaper
 
 ### 📺 Chaînes multiples
 Plusieurs chaînes YouTube (comptes Google différents) peuvent être gérées depuis la même app :
@@ -384,6 +405,11 @@ FFmpeg doit être installé séparément sur la machine cible.
 ---
 
 ## Changelog
+
+### v1.14.0 — Import JSON de métadonnées YouTube, aperçu aléatoire fiable, bibliothèque plus rapide
+- **📥 Import JSON de métadonnées** (Upload dossier YouTube) : dépose un `.json` (titre/description/tags par ID = nom de fichier) dans le dossier de vidéos, il est détecté et appliqué automatiquement — correspondance souple (accents/casse/séparateurs ignorés), résumé des vidéos/ID non associés, et bouton **📤 Exporter modèle JSON** pour générer un squelette à remplir
+- **🎲 Aperçu aléatoire** (Turbo V2) : ne retombe plus sur le même fichier deux fois de suite
+- **📚 Mes vidéos** (bibliothèque YouTube) : les miniatures se chargent désormais en parallèle — une chaîne avec beaucoup de vidéos ne reste plus bloquée de longues secondes sur « Chargement des vidéos... »
 
 ### v1.13.1 — Titre Turbo V2 toujours modifiable et utilisé comme nom de fichier
 - Le champ **Titre** en mode Turbo V2 reste modifiable même quand le preset désactive le texte à l'écran (auparavant grisé dans ce cas)
